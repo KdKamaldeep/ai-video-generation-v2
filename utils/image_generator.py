@@ -115,7 +115,7 @@ class ImageGenerator:
             f"{clean_text}. "
             f"Style: {style_desc}. "
             f"High resolution, well-lit, clear composition. "
-            f"Vertical format, centered subject, 9:16 aspect ratio."
+            f"centered subject, 9:16 aspect ratio."
         )
         
         return enhanced_prompt

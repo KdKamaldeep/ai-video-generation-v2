@@ -115,10 +115,16 @@ class FullPipelineWithImagesRequest(BaseModel):
     script_tags: List[str] = None
     # If script data is provided, skip script generation
     use_existing_script: bool = False
+    # Story type for script generation (if not using existing script)
+    story_type: str = "motivation"
 
 class ScriptRetryRequest(BaseModel):
     retry: bool = True
     max_retries: int = 3
+    story_type: str = "motivation"
+
+class GenerateScriptRequest(BaseModel):
+    story_type: str = "motivation"
 
 # Create necessary directories
 logger.info("Creating necessary directories...")
@@ -137,6 +143,7 @@ async def root():
         "endpoints": {
             "generate_script": "/generate-script",
             "generate_script_with_retry": "/generate-script-with-retry",
+            "available_story_types": "/available-story-types",
             "generate_voice": "/generate-voice",
             "create_video": "/create-video",
             "upload_to_youtube": "/upload-to-youtube",
@@ -151,7 +158,11 @@ async def root():
             "script_generation": {
                 "retry_support": True,
                 "max_retries": 3,
-                "existing_script_support": True
+                "existing_script_support": True,
+                "story_types": [
+                    "motivation", "horror", "real_life", "adventure", 
+                    "comedy", "drama", "mystery", "romance", "sci_fi", "fantasy"
+                ]
             },
             "image_generation": {
                 "enabled": image_generator is not None,
@@ -165,13 +176,26 @@ async def root():
             }
         },
         "usage_examples": {
+            "generate_script_with_story_type": {
+                "method": "GET",
+                "endpoint": "/generate-script?story_type=horror"
+            },
             "generate_script_with_retry": {
                 "method": "POST",
                 "endpoint": "/generate-script-with-retry",
-                "body": {"retry": True, "max_retries": 3}
+                "body": {"retry": True, "max_retries": 3, "story_type": "adventure"}
+            },
+            "full_pipeline_with_story_type": {
+                "method": "POST", 
+                "endpoint": "/full-pipeline-with-images",
+                "body": {
+                    "story_type": "comedy",
+                    "use_ffmpeg": True,
+                    "animation_type": "zoom_in"
+                }
             },
             "full_pipeline_with_existing_script": {
-                "method": "POST",
+                "method": "POST", 
                 "endpoint": "/full-pipeline-with-images",
                 "body": {
                     "use_existing_script": True,
@@ -184,17 +208,17 @@ async def root():
     }
 
 @app.get("/generate-script")
-async def generate_script():
-    """Generate a YouTube Shorts script using OpenAI GPT"""
-    logger.info("Script generation requested")
+async def generate_script(story_type: str = "motivation"):
+    """Generate a YouTube Shorts script using OpenAI GPT with specified story type"""
+    logger.info(f"Script generation requested for story type: {story_type}")
     
     if script_generator is None:
         logger.error("Script generator not available")
         raise HTTPException(status_code=503, detail="Script generator not available. Check OPENAI_API_KEY configuration.")
     
     try:
-        logger.info("Generating script using OpenAI...")
-        script = script_generator.generate_script()
+        logger.info(f"Generating {story_type} script using OpenAI...")
+        script = script_generator.generate_script(story_type)
         logger.info(f"Script generated successfully: {script.title}")
         return {
             "success": True,
@@ -204,7 +228,8 @@ async def generate_script():
                 "total_duration": script.total_duration,
                 "tags": script.tags
             },
-            "message": "Script generated successfully. Use /generate-script-with-retry to retry if needed."
+            "story_type": story_type,
+            "message": f"{story_type.capitalize()} script generated successfully. Use /generate-script-with-retry to retry if needed."
         }
     except Exception as e:
         logger.error(f"Failed to generate script: {str(e)}")
@@ -212,8 +237,8 @@ async def generate_script():
 
 @app.post("/generate-script-with-retry")
 async def generate_script_with_retry(request: ScriptRetryRequest = ScriptRetryRequest()):
-    """Generate a YouTube Shorts script with retry functionality"""
-    logger.info("Script generation with retry requested")
+    """Generate a YouTube Shorts script with retry functionality and story type support"""
+    logger.info(f"Script generation with retry requested for story type: {request.story_type}")
     
     if script_generator is None:
         logger.error("Script generator not available")
@@ -225,10 +250,10 @@ async def generate_script_with_retry(request: ScriptRetryRequest = ScriptRetryRe
     
     while attempts < max_attempts:
         attempts += 1
-        logger.info(f"Script generation attempt {attempts}/{max_attempts}")
+        logger.info(f"Script generation attempt {attempts}/{max_attempts} for {request.story_type}")
         
         try:
-            script = script_generator.generate_script()
+            script = script_generator.generate_script(request.story_type)
             logger.info(f"Script {attempts} generated successfully: {script.title}")
             
             script_data = {
@@ -236,7 +261,8 @@ async def generate_script_with_retry(request: ScriptRetryRequest = ScriptRetryRe
                 "narration": [line.dict() for line in script.narration],
                 "total_duration": script.total_duration,
                 "tags": script.tags,
-                "attempt": attempts
+                "attempt": attempts,
+                "story_type": request.story_type
             }
             
             scripts.append(script_data)
@@ -248,7 +274,8 @@ async def generate_script_with_retry(request: ScriptRetryRequest = ScriptRetryRe
                     "scripts": scripts,
                     "total_attempts": attempts,
                     "final_script": script_data,
-                    "message": f"Script generated successfully after {attempts} attempt(s)"
+                    "story_type": request.story_type,
+                    "message": f"{request.story_type.capitalize()} script generated successfully after {attempts} attempt(s)"
                 }
             
             # If retry is enabled and we have more attempts, continue
@@ -480,6 +507,18 @@ async def get_available_voices():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get voices: {str(e)}")
 
+@app.get("/available-story-types")
+async def get_available_story_types():
+    """Get available story types for script generation"""
+    try:
+        story_types = script_generator.get_available_story_types()
+        return {
+            "success": True,
+            "story_types": story_types
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get story types: {str(e)}")
+
 @app.get("/download/{file_type}/{filename}")
 async def download_file(file_type: str, filename: str):
     """Download generated files"""
@@ -611,10 +650,11 @@ async def full_pipeline_with_images(request: FullPipelineWithImagesRequest = Ful
             logger.info(f"Using existing script: {script.title}")
         else:
             logger.info("Step 1: Generating new script...")
-            script = script_generator.generate_script()
+            script = script_generator.generate_script(request.story_type)
             logger.info(f"Script generated: {script.title}")
         
         narration_texts = [line.text for line in script.narration]
+        visual_texts = [line.visual_suggestion for line in script.narration]
         
         # Step 2: Generate voice
         logger.info("Step 2: Generating voice...")
@@ -627,7 +667,7 @@ async def full_pipeline_with_images(request: FullPipelineWithImagesRequest = Ful
         
         # Step 3: Generate images
         logger.info("Step 3: Generating images...")
-        image_paths = image_generator.generate_images_for_script(narration_texts, "relatable")
+        image_paths = image_generator.generate_images_for_script(visual_texts, "relatable")
         successful_image_paths = [path for path in image_paths if path is not None]
         logger.info(f"Generated {len(successful_image_paths)} images")
         
