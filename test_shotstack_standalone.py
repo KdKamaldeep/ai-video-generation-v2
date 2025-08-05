@@ -1,0 +1,72 @@
+import shotstack_sdk as shotstack
+import os
+
+from shotstack_sdk.model.soundtrack  import Soundtrack
+from shotstack_sdk.model.image_asset import ImageAsset
+from shotstack_sdk.api               import edit_api
+from shotstack_sdk.model.clip        import Clip
+from shotstack_sdk.model.track       import Track
+from shotstack_sdk.model.timeline    import Timeline
+from shotstack_sdk.model.output      import Output
+from shotstack_sdk.model.edit        import Edit
+from shotstack_sdk.model.title_asset import TitleAsset
+
+if __name__ == "__main__":
+    host = "https://api.shotstack.io/stage"
+
+    
+    configuration = shotstack.Configuration(host = host)
+    
+
+    configuration.api_key['DeveloperKey'] = 'BmV2GifUnIVoMmi0wHo60HNpAvD3sScKRsWBsWsG'
+    
+    with shotstack.ApiClient(configuration) as api_client:
+        api_instance = edit_api.EditApi(api_client)
+
+        soundtrack = Soundtrack(
+            src     = "https://s3-ap-southeast-2.amazonaws.com/shotstack-assets/music/disco.mp3",
+            effect  = "fadeInFadeOut"
+        )
+
+        title_asset = TitleAsset(
+            style = "minimal",
+            text  = "Hello World",
+            size  = "x-small"
+        )
+
+        title = Clip(
+            asset  = title_asset,
+            start  = 0.0,
+            length = 5.0,
+            effect = "zoomIn"
+        )
+
+        track = Track(clips = [title])
+
+        timeline = Timeline(
+            background = "#000000",
+            soundtrack = soundtrack,
+            tracks     = [track]
+        )
+
+        output = Output(
+            format      = "mp4",
+            resolution  = "sd"
+        )
+
+        edit = Edit(
+            timeline = timeline,
+            output   = output
+        )
+
+        try:
+            api_response = api_instance.post_render(edit)
+
+            message = api_response['response']['message']
+            id = api_response['response']['id']
+        
+            print(f"{message}\n")
+            print(">> Now check the progress of your render by running:")
+            print(f">> python examples/status.py {id}")
+        except Exception as e:
+            print(f"Unable to resolve API call: {e}")

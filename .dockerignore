@@ -57,6 +57,7 @@ uploads/
 output/
 *.mp3
 *.mp4
+*.log
 *.wav
 *.avi
 *.mov

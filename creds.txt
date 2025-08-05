@@ -9,3 +9,7 @@ elevenlabs-api-key : sk_61c33c8cdde4dce5967f5d2a2be085dc9536b8f2bf409009
 
 voice-id-name : Neeraj Hindi
 voice-id-elevenlabs : zgqefOY5FPQ3bB7OZTVR
+
+aws
+access-key : AKIA4MTWMML2IITQ5JPR
+secret-key : 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

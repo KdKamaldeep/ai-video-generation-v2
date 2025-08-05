@@ -6,7 +6,7 @@ A complete FastAPI backend for automating YouTube Shorts creation for the "Why W
 
 - **Script Generation**: Uses OpenAI GPT to create engaging <60s YouTube Shorts scripts
 - **Voice Synthesis**: Converts narration to speech using ElevenLabs API
-- **Video Creation**: Generates vertical videos with FFmpeg, including subtitles and placeholder images
+- **Video Creation**: Generates vertical videos using Shotstack API, including subtitles and background images
 - **YouTube Upload**: Automatically uploads videos to YouTube with proper metadata
 - **Full Pipeline**: Complete automation from script to published video
 - **Docker Support**: Full containerization with Docker and Docker Compose
@@ -14,10 +14,10 @@ A complete FastAPI backend for automating YouTube Shorts creation for the "Why W
 ## 📋 Prerequisites
 
 - Python 3.11+
-- FFmpeg (installed automatically in Docker)
 - API Keys for:
   - OpenAI GPT
   - ElevenLabs
+  - Shotstack
   - YouTube Data API
 
 ## 🛠️ Installation
@@ -48,12 +48,7 @@ A complete FastAPI backend for automating YouTube Shorts creation for the "Why W
    pip install -r requirements.txt
    ```
 
-2. **Install FFmpeg**:
-   - **Ubuntu/Debian**: `sudo apt-get install ffmpeg`
-   - **macOS**: `brew install ffmpeg`
-   - **Windows**: Download from [FFmpeg website](https://ffmpeg.org/download.html)
-
-3. **Set up environment variables**:
+2. **Set up environment variables**:
    ```bash
    cp env.template .env
    # Edit .env with your API keys
@@ -78,6 +73,9 @@ OPENAI_API_KEY=your_openai_api_key_here
 ELEVENLABS_API_KEY=your_elevenlabs_api_key_here
 ELEVENLABS_VOICE_ID=your_elevenlabs_voice_id_here
 
+# Shotstack API Configuration
+SHOTSTACK_API_KEY=your_shotstack_api_key_here
+
 # YouTube API Configuration
 YOUTUBE_CLIENT_ID=your_youtube_client_id_here
 YOUTUBE_CLIENT_SECRET=your_youtube_client_secret_here
@@ -97,7 +95,8 @@ OUTPUT_DIR=./output
 
 1. **OpenAI API Key**: Get from [OpenAI Platform](https://platform.openai.com/api-keys)
 2. **ElevenLabs API Key**: Get from [ElevenLabs](https://elevenlabs.io/)
-3. **YouTube API**: 
+3. **Shotstack API Key**: Get from [Shotstack](https://shotstack.io/)
+4. **YouTube API**: 
    - Go to [Google Cloud Console](https://console.cloud.google.com/)
    - Create a project and enable YouTube Data API v3
    - Create OAuth 2.0 credentials
