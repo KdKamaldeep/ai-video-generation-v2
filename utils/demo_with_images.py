@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """
-Demonstration of complete flow with DALL-E images, S3 upload, and Shotstack video creation
+Demonstration of complete flow with DALL-E images and local file storage
 """
 
 import os
 import tempfile
 import logging
+import time
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -17,9 +18,9 @@ logger = logging.getLogger(__name__)
 
 def demonstrate_complete_flow_with_images():
     """
-    Demonstrate the complete flow: Script → Voice (S3) → Images (S3) → Video (Shotstack)
+    Demonstrate the complete flow: Script → Voice → Images → Video (Shotstack)
     """
-    print("🎬 Complete Flow with DALL-E Images and S3 Integration")
+    print("🎬 Complete Flow with DALL-E Images and Local Storage")
     print("=" * 60)
     
     try:
@@ -43,30 +44,27 @@ def demonstrate_complete_flow_with_images():
         print(f"✅ Script generated: {script.title}")
         print(f"   Narration lines: {len(narration_texts)}")
         
-        # Step 3: Generate voice and upload to S3
-        print("\n3. Generating voice and uploading to S3...")
-        with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False, dir="output") as tmp_file:
-            audio_path = tmp_file.name
+        # Step 3: Generate voice
+        print("\n3. Generating voice...")
+        timestamp = int(time.time())
+        audio_filename = f"voice_{timestamp}.mp3"
+        audio_path = os.path.join("output", audio_filename)
         
-        s3_audio_url = voice_synth.synthesize_and_upload_to_s3(narration_texts, audio_path)
-        if not s3_audio_url:
-            print("❌ Failed to generate voice or upload to S3")
-            return False
+        voice_synth.synthesize_voice(narration_texts, audio_path)
+        print(f"✅ Voice generated")
+        print(f"🔗 Audio path: {audio_path}")
         
-        print(f"✅ Voice generated and uploaded to S3")
-        print(f"🔗 S3 Audio URL: {s3_audio_url}")
+        # Step 4: Generate images
+        print("\n4. Generating images with DALL-E...")
+        image_paths = image_gen.generate_images_for_script(narration_texts, "relatable")
+        successful_image_paths = [path for path in image_paths if path is not None]
         
-        # Step 4: Generate images and upload to S3
-        print("\n4. Generating images with DALL-E and uploading to S3...")
-        image_urls = image_gen.generate_images_for_script(narration_texts, "relatable")
-        successful_image_urls = [url for url in image_urls if url is not None]
-        
-        print(f"✅ Generated {len(successful_image_urls)} images")
-        for i, url in enumerate(successful_image_urls):
-            print(f"   Image {i+1}: {url}")
+        print(f"✅ Generated {len(successful_image_paths)} images")
+        for i, path in enumerate(successful_image_paths):
+            print(f"   Image {i+1}: {path}")
         
         # Step 5: Create video with images using Shotstack
-        print("\n5. Creating video with Shotstack using S3 audio and images...")
+        print("\n5. Creating video with Shotstack using local audio and images...")
         
         # Convert script lines to narration format
         narration_lines = []
@@ -81,15 +79,14 @@ def demonstrate_complete_flow_with_images():
             current_time += duration
         
         # Create output video path
-        timestamp = int(os.path.getmtime(audio_path))
         video_filename = f"complete_demo_{timestamp}.mp4"
         video_path = os.path.join("output", video_filename)
         
         # Create video with images
         result_video_path = video_creator.create_video_with_images(
-            s3_audio_url, 
+            audio_path, 
             narration_lines, 
-            successful_image_urls, 
+            successful_image_paths, 
             video_path
         )
         
@@ -98,10 +95,10 @@ def demonstrate_complete_flow_with_images():
         
         # Step 6: Show complete flow summary
         print("\n6. Complete Flow Summary:")
-        print("   Script Generation → Voice Synthesis → S3 Audio Upload → DALL-E Image Generation → S3 Image Upload → Shotstack Video Creation")
+        print("   Script Generation → Voice Synthesis → DALL-E Image Generation → Shotstack Video Creation")
         print(f"   📝 Script: {script.title}")
-        print(f"   🔗 S3 Audio: {s3_audio_url}")
-        print(f"   🖼️  S3 Images: {len(successful_image_urls)} images")
+        print(f"   🔗 Audio: {audio_path}")
+        print(f"   🖼️  Images: {len(successful_image_paths)} images")
         print(f"   🎬 Final Video: {result_video_path}")
         
         return True
@@ -130,13 +127,13 @@ def test_image_generation_only():
         ]
         
         print(f"Generating {len(test_texts)} test images...")
-        image_urls = image_gen.generate_images_for_script(test_texts, "relatable")
+        image_paths = image_gen.generate_images_for_script(test_texts, "relatable")
         
-        successful_urls = [url for url in image_urls if url is not None]
-        print(f"✅ Generated {len(successful_urls)} images successfully")
+        successful_paths = [path for path in image_paths if path is not None]
+        print(f"✅ Generated {len(successful_paths)} images successfully")
         
-        for i, url in enumerate(successful_urls):
-            print(f"   Image {i+1}: {url}")
+        for i, path in enumerate(successful_paths):
+            print(f"   Image {i+1}: {path}")
         
         return True
         
@@ -150,7 +147,6 @@ if __name__ == "__main__":
     print("- OPENAI_API_KEY (for script generation and DALL-E)")
     print("- ELEVENLABS_API_KEY (for voice synthesis)")
     print("- SHOTSTACK_API_KEY (for video creation)")
-    print("- AWS credentials (for S3 upload)")
     print()
     
     # Test image generation only

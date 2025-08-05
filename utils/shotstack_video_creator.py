@@ -51,16 +51,8 @@ class ShotstackVideoCreator:
             # Step 4: Wait for render to complete and download
             final_path = self._wait_and_download(render_id, output_path)
             
-            # Step 5: Upload to S3
-            s3_url = self._upload_video_to_s3(final_path)
-            
             logger.info(f"Video created successfully: {final_path}")
-            if s3_url:
-                logger.info(f"Video uploaded to S3: {s3_url}")
-                return s3_url
-            else:
-                logger.warning("Failed to upload to S3, returning local path")
-                return final_path
+            return final_path
             
         except Exception as e:
             logger.error(f"Error creating video with Shotstack: {e}")
@@ -86,16 +78,8 @@ class ShotstackVideoCreator:
             # Step 4: Wait for render to complete and download
             final_path = self._wait_and_download(render_id, output_path)
             
-            # Step 5: Upload to S3
-            s3_url = self._upload_video_to_s3(final_path)
-            
             logger.info(f"Video with images created successfully: {final_path}")
-            if s3_url:
-                logger.info(f"Video uploaded to S3: {s3_url}")
-                return s3_url
-            else:
-                logger.warning("Failed to upload to S3, returning local path")
-                return final_path
+            return final_path
             
         except Exception as e:
             logger.error(f"Error creating video with images: {e}")
@@ -118,10 +102,30 @@ class ShotstackVideoCreator:
             logger.info(f"Converted local file to URL: {file_url}")
             return file_url
         
-        # If it doesn't exist, log error and use fallback
+        # If it doesn't exist, raise an error
         logger.error(f"Audio file not found: {audio_input}")
-        logger.info("Using fallback audio URL")
-        return 'https://s3-ap-southeast-2.amazonaws.com/shotstack-assets/music/moment.mp3'
+        raise FileNotFoundError(f"Audio file not found: {audio_input}")
+    
+    def _process_image_url(self, image_input: str) -> str:
+        """
+        Process image input which could be a local file path or S3 URL
+        Returns a URL that Shotstack can access
+        """
+        # If it's already a URL (S3, HTTP, etc.), return as is
+        if image_input.startswith(('http://', 'https://')):
+            logger.info(f"Using existing image URL: {image_input}")
+            return image_input
+        
+        # If it's a local file path, convert to file:// URL
+        if os.path.exists(image_input):
+            abs_path = os.path.abspath(image_input)
+            file_url = f"file://{abs_path}"
+            logger.info(f"Converted local image to URL: {file_url}")
+            return file_url
+        
+        # If it doesn't exist, raise an error
+        logger.error(f"Image file not found: {image_input}")
+        raise FileNotFoundError(f"Image file not found: {image_input}")
     
     def _upload_audio(self, audio_path: str) -> str:
         """Upload audio file to Shotstack and return the URL"""
@@ -214,8 +218,9 @@ class ShotstackVideoCreator:
             
             # Create image asset if available
             if i < len(image_urls) and image_urls[i]:
+                processed_image_url = self._process_image_url(image_urls[i])
                 image_asset = ImageAsset(
-                    src=image_urls[i],
+                    src=processed_image_url,
                     type="image"
                 )
                 
@@ -323,54 +328,6 @@ class ShotstackVideoCreator:
         
         logger.info(f"Video downloaded to: {output_path}")
     
-    def _upload_video_to_s3(self, video_path: str) -> Optional[str]:
-        """
-        Upload the rendered video to S3 under youtube-shorts folder
-        
-        Args:
-            video_path: Local path to the video file
-            
-        Returns:
-            S3 URL of the uploaded video, or None if upload failed
-        """
-        try:
-            # Import S3Uploader here to avoid circular imports
-            from .s3_uploader import S3Uploader
-            
-            if not os.path.exists(video_path):
-                logger.error(f"Video file not found: {video_path}")
-                return None
-            
-            # Initialize S3 uploader
-            s3_uploader = S3Uploader()
-            
-            # Generate S3 key for youtube-shorts folder
-            import uuid
-            from datetime import datetime
-            
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            unique_id = str(uuid.uuid4())[:8]
-            filename = os.path.basename(video_path)
-            s3_key = f"youtube-shorts/{timestamp}_{unique_id}_{filename}"
-            
-            # Upload to S3
-            s3_url = s3_uploader.upload_file_with_custom_key(
-                video_path,
-                s3_key,
-                "video/mp4"
-            )
-            
-            if s3_url:
-                logger.info(f"Video uploaded to S3: {s3_url}")
-                return s3_url
-            else:
-                logger.error("Failed to upload video to S3")
-                return None
-                
-        except Exception as e:
-            logger.error(f"Error uploading video to S3: {e}")
-            return None
-    
     def create_simple_video(self, audio_path: str, output_path: str, duration: float = 30.0) -> str:
         """Create a simple video with just audio and a static background"""
         try:
@@ -425,15 +382,8 @@ class ShotstackVideoCreator:
             render_id = self._submit_render(edit)
             final_path = self._wait_and_download(render_id, output_path)
             
-            # Upload to S3
-            s3_url = self._upload_video_to_s3(final_path)
-            
-            if s3_url:
-                logger.info(f"Simple video uploaded to S3: {s3_url}")
-                return s3_url
-            else:
-                logger.warning("Failed to upload simple video to S3, returning local path")
-                return final_path
+            logger.info(f"Simple video created successfully: {final_path}")
+            return final_path
             
         except Exception as e:
             logger.error(f"Error creating simple video: {e}")

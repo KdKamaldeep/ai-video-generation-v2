@@ -20,21 +20,28 @@ class VoiceSynthesizer:
         logger.info(f"Initializing ElevenLabs client with voice ID: {self.voice_id}")
     
     def synthesize_voice(self, narration_lines: List[str], output_path: str) -> str:
-        """Synthesize voice for narration lines using ElevenLabs API"""
+        """
+        Synthesize voice from text using ElevenLabs API
         
-        logger.info(f"Synthesizing voice for {len(narration_lines)} lines")
+        Args:
+            narration_lines: List of text lines to synthesize
+            output_path: Path to save the audio file
+            
+        Returns:
+            Path to the created audio file
+        """
+        if not self.api_key:
+            logger.error("ELEVENLABS_API_KEY environment variable is not set")
+            raise ValueError("ELEVENLABS_API_KEY environment variable is not set")
         
-        # Combine all narration lines into one text
+        # Join all lines with spaces
         full_text = " ".join(narration_lines)
-        logger.info(f"Combined text length: {len(full_text)} characters")
+        logger.info(f"Synthesizing voice for text: {full_text[:100]}...")
         
-        # Prepare the API request
         url = f"{self.base_url}/text-to-speech/{self.voice_id}"
-        
         headers = {
-            "Accept": "audio/mpeg",
-            "Content-Type": "application/json",
-            "xi-api-key": self.api_key
+            "xi-api-key": self.api_key,
+            "Content-Type": "application/json"
         }
         
         data = {
@@ -65,39 +72,6 @@ class VoiceSynthesizer:
             logger.info("Creating fallback silent audio")
             # Fallback: create a silent audio file
             return self._create_silent_audio(output_path, len(narration_lines) * 3)
-    
-    def synthesize_and_upload_to_s3(self, narration_lines: List[str], output_path: str) -> Optional[str]:
-        """
-        Synthesize voice and upload to S3, returning the public URL
-        
-        Args:
-            narration_lines: List of text lines to synthesize
-            output_path: Local path to save the audio file temporarily
-            
-        Returns:
-            Public S3 URL of the uploaded audio file, or None if failed
-        """
-        try:
-            # First synthesize the voice locally
-            local_path = self.synthesize_voice(narration_lines, output_path)
-            
-            # Import S3Uploader here to avoid circular imports
-            from .s3_uploader import S3Uploader
-            
-            # Upload to S3
-            s3_uploader = S3Uploader()
-            s3_url = s3_uploader.upload_audio_file(local_path)
-            
-            if s3_url:
-                logger.info(f"Audio successfully uploaded to S3: {s3_url}")
-                return s3_url
-            else:
-                logger.error("Failed to upload audio to S3")
-                return None
-                
-        except Exception as e:
-            logger.error(f"Error in synthesize_and_upload_to_s3: {e}")
-            return None
     
     def _create_silent_audio(self, output_path: str, duration_seconds: int) -> str:
         """Create a silent audio file as fallback"""
