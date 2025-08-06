@@ -32,11 +32,17 @@ def upload_to_s3(file_path: str, file_type: str = "image") -> str:
         # Determine folder based on file type
         folder = "debug-images" if file_type == "image" else "debug-videos"
         
+        if file_type == "image":
+            content_type = "image/png"
+        else:
+            content_type = "video/mp4"
+
+
         # Upload file
         s3_url = uploader.upload_video(
             local_file_path=file_path,
             folder=folder,
-            content_type="image/png" 
+            content_type=content_type
         )
         
         if s3_url:
