@@ -522,6 +522,9 @@ class StableDiffusionGenerator:
             if image.mode != 'RGB':
                 image = image.convert('RGB')
             
+            # Apply color preprocessing to improve video generation
+            image = self._preprocess_image_for_video(image)
+            
             # Resize image for video generation
             image = image.resize(target_size, Image.Resampling.LANCZOS)
             
@@ -539,13 +542,15 @@ class StableDiffusionGenerator:
             signal.alarm(60)
             
             try:
-                # Generate video frames with enhanced motion settings
+                # Generate video frames with enhanced motion settings and color correction
                 pipeline_kwargs = {
                     'decode_chunk_size': 4 if fast_mode else 8,  # Smaller chunks for faster processing
                     'motion_bucket_id': motion_bucket_id,  # More dynamic motion
                     'fps': fps,
                     'noise_aug_strength': noise_aug_strength,  # Increased for more visible motion
                     'num_frames': num_frames,
+                    'guidance_scale': 1.0,  # Lower guidance scale for better color preservation
+                    'num_inference_steps': 14 if fast_mode else 25,  # Fewer steps for faster generation
                 }
                 
                 if seed is not None:
@@ -779,6 +784,8 @@ class StableDiffusionGenerator:
                     import numpy as np
                     processed_frames.append(np.array(frame))
                 else:  # Already numpy array
+                    # Apply color correction to fix inverted colors and artifacts
+                    frame = self._correct_video_frame_colors(frame)
                     processed_frames.append(frame)
             
             # Convert frames to video
@@ -790,6 +797,81 @@ class StableDiffusionGenerator:
         except Exception as e:
             logger.error(f"Error saving video: {e}")
             return None
+    
+    def _preprocess_image_for_video(self, image):
+        """Preprocess image to improve video generation quality"""
+        try:
+            import numpy as np
+            
+            # Convert to numpy array for processing
+            img_array = np.array(image)
+            
+            # Ensure proper color range
+            if img_array.max() > 255:
+                img_array = img_array / 255.0 * 255
+                img_array = img_array.astype(np.uint8)
+            
+            # Apply slight color enhancement for better video generation
+            # Convert to float for processing
+            img_float = img_array.astype(np.float32) / 255.0
+            
+            # Apply slight contrast enhancement
+            contrast = 1.1
+            img_float = (img_float - 0.5) * contrast + 0.5
+            
+            # Clip to valid range
+            img_float = np.clip(img_float, 0, 1)
+            
+            # Convert back to uint8
+            img_array = (img_float * 255).astype(np.uint8)
+            
+            # Convert back to PIL Image
+            from PIL import Image
+            return Image.fromarray(img_array)
+            
+        except Exception as e:
+            logger.warning(f"Image preprocessing failed: {e}")
+            return image
+    
+    def _correct_video_frame_colors(self, frame):
+        """Correct color issues in video frames"""
+        try:
+            import numpy as np
+            
+            # Ensure frame is in the right format
+            if frame.dtype != np.uint8:
+                # Normalize to 0-255 range
+                if frame.max() <= 1.0:
+                    frame = (frame * 255).astype(np.uint8)
+                else:
+                    frame = frame.astype(np.uint8)
+            
+            # Check if colors are inverted (common SVD issue)
+            # If the frame has very bright areas where they should be dark, invert
+            if frame.mean() > 127:  # If average brightness is too high
+                logger.info("Detected inverted colors, applying correction")
+                frame = 255 - frame
+            
+            # Apply color normalization to fix artifacts
+            # Clip values to valid range
+            frame = np.clip(frame, 0, 255)
+            
+            # Apply slight color correction to reduce artifacts
+            # Convert to float for processing
+            frame_float = frame.astype(np.float32) / 255.0
+            
+            # Apply gamma correction to improve color balance
+            gamma = 1.1
+            frame_float = np.power(frame_float, 1/gamma)
+            
+            # Convert back to uint8
+            frame = (frame_float * 255).astype(np.uint8)
+            
+            return frame
+            
+        except Exception as e:
+            logger.warning(f"Color correction failed: {e}")
+            return frame
     
     def create_motion_video_from_image_sequence(
         self,
