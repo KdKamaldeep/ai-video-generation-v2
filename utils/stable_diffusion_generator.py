@@ -485,16 +485,10 @@ class StableDiffusionGenerator:
         
         try:
             logger.info(f"Generating video from image: {image_path}")
-            logger.info(f"Video pipeline loaded: {self.video_pipeline is not None}")
             
             # Check if image file exists
             if not os.path.exists(image_path):
                 logger.error(f"Image file does not exist: {image_path}")
-                return None
-            
-            # Check if it's actually an image file
-            if not image_path.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.tiff')):
-                logger.error(f"File is not an image: {image_path}")
                 return None
             
             # Select motion bucket ID dynamically if not provided
@@ -566,14 +560,7 @@ class StableDiffusionGenerator:
                     pipeline_kwargs['generator'] = torch.Generator(device=self.device).manual_seed(seed)
                 
                 logger.info(f"Calling video pipeline with kwargs: {pipeline_kwargs}")
-                logger.info(f"Image size before pipeline: {image.size}")
-                
-                try:
-                    video_frames = self.video_pipeline(image, **pipeline_kwargs).frames[0]
-                    logger.info(f"Video pipeline call successful")
-                except Exception as pipeline_error:
-                    logger.error(f"Video pipeline call failed: {pipeline_error}")
-                    return None
+                video_frames = self.video_pipeline(image, **pipeline_kwargs).frames[0]
                 
                 # Cancel timeout
                 signal.alarm(0)
@@ -841,28 +828,28 @@ class StableDiffusionGenerator:
             return image
     
     def _correct_video_frame_colors(self, frame):
-        """Correct color issues in video frames"""
         try:
             import numpy as np
-            
-            # Ensure frame is in the right format
-            if frame.dtype != np.uint8:
-                # Normalize to 0-255 range
+            import logging
+            logger = logging.getLogger(__name__)
+
+            # Normalize if in float format
+            if frame.dtype in [np.float16, np.float32, np.float64]:
                 if frame.max() <= 1.0:
                     frame = (frame * 255).astype(np.uint8)
                 else:
-                    frame = frame.astype(np.uint8)
-            
-            # Only apply corrections if there are obvious issues
-            # Check for extreme color inversion (very rare)
-            if frame.mean() > 200:  # Only if almost completely white
-                logger.info("Detected extreme color inversion, applying correction")
-                frame = 255 - frame
-            
-            # Only clip values if they're outside valid range
-            if frame.min() < 0 or frame.max() > 255:
-                frame = np.clip(frame, 0, 255)
-            
+                    frame = np.clip(frame, 0, 255).astype(np.uint8)
+            elif frame.dtype != np.uint8:
+                frame = np.clip(frame, 0, 255).astype(np.uint8)
+
+            # Ensure shape is (H, W, 3)
+            if frame.ndim == 3 and frame.shape[2] > 3:
+                frame = frame[:, :, :3]
+
+            logger.debug(f"Corrected frame dtype: {frame.dtype}, max: {frame.max()}, min: {frame.min()}")
+            return frame
+        except Exception as e:
+            logger.warning(f"Color correction failed: {e}")
             return frame
             
         except Exception as e:
@@ -913,9 +900,6 @@ class StableDiffusionGenerator:
                 
                 # Generate video from this image
                 logger.info(f"Generating video from image: {image_path}")
-                logger.info(f"Image file exists: {os.path.exists(image_path)}")
-                logger.info(f"Image file type: {os.path.splitext(image_path)[1]}")
-                
                 video_path = self.generate_video_from_image(
                     image_path=image_path,
                     motion_strength=motion_strength,
@@ -925,11 +909,6 @@ class StableDiffusionGenerator:
                 )
                 
                 logger.info(f"Video generation result: {video_path}")
-                if video_path:
-                    logger.info(f"Video file exists: {os.path.exists(video_path)}")
-                    logger.info(f"Video file type: {os.path.splitext(video_path)[1]}")
-                else:
-                    logger.error("Video generation returned None")
                 
                 if video_path is None:
                     logger.error(f"Video generation failed for image: {image_path}")
