@@ -5,7 +5,7 @@ import tempfile
 import uuid
 from datetime import datetime
 from typing import List, Optional, Dict, Any
-from diffusers import StableDiffusionPipeline, DPMSolverMultistepScheduler
+from diffusers import StableDiffusionPipeline, DPMSolverMultistepScheduler, EulerDiscreteScheduler
 from diffusers.utils import export_to_video
 # Add stable video diffusion imports
 from diffusers import StableVideoDiffusionPipeline
@@ -75,10 +75,30 @@ class StableDiffusionGenerator:
                 requires_safety_checker=False
             )
             
-            # Use DPM++ 2M scheduler for better quality
-            self.pipeline.scheduler = DPMSolverMultistepScheduler.from_config(
-                self.pipeline.scheduler.config
-            )
+            # Try to configure a better scheduler for quality
+            try:
+                # First try DPMSolverMultistepScheduler
+                scheduler = DPMSolverMultistepScheduler.from_pretrained(
+                    self.model_id,
+                    subfolder="scheduler"
+                )
+                self.pipeline.scheduler = scheduler
+                logger.info("DPMSolverMultistepScheduler configured successfully")
+            except Exception as e:
+                logger.warning(f"Could not configure DPMSolverMultistepScheduler: {e}")
+                try:
+                    # Fall back to EulerDiscreteScheduler
+                    scheduler = EulerDiscreteScheduler.from_pretrained(
+                        self.model_id,
+                        subfolder="scheduler"
+                    )
+                    self.pipeline.scheduler = scheduler
+                    logger.info("EulerDiscreteScheduler configured successfully")
+                except Exception as e2:
+                    logger.warning(f"Could not configure EulerDiscreteScheduler: {e2}")
+                    logger.info("Using default scheduler configuration")
+                    # Keep the default scheduler if all else fails
+                    pass
             
             # Move to device
             self.pipeline = self.pipeline.to(self.device)
