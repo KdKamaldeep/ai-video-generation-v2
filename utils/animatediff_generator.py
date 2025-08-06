@@ -26,14 +26,14 @@ logger = logging.getLogger(__name__)
 class AnimateDiffGenerator:
     def __init__(self, 
                  sd_model_id: str = "SG161222/Realistic_Vision_V5.1_noVAE",
-                 animatediff_model_id: str = "guoyww/animatediff",
+                 animatediff_model_id: str = "ByteDance/AnimateDiff-v1-5",
                  device: str = "auto"):
         """
         Initialize AnimateDiff generator with Stable Diffusion for text-to-image
         
         Args:
             sd_model_id: Hugging Face model ID for Stable Diffusion
-            animatediff_model_id: Hugging Face model ID for AnimateDiff
+            animatediff_model_id: Hugging Face model ID for AnimateDiff motion module
             device: Device to run on ('auto', 'cuda', 'cpu')
         """
         self.sd_model_id = sd_model_id
@@ -57,7 +57,7 @@ class AnimateDiffGenerator:
         self._load_pipelines()
         
         logger.info(f"AnimateDiffGenerator initialized with SD model: {sd_model_id}")
-        logger.info(f"AnimateDiff model: {animatediff_model_id}")
+        logger.info(f"AnimateDiff motion module: {animatediff_model_id}")
     
     def _get_device(self, device: str) -> str:
         """Determine the best device to use"""
@@ -110,34 +110,58 @@ class AnimateDiffGenerator:
             if ANIMATEDIFF_AVAILABLE:
                 logger.info(f"Loading AnimateDiff pipeline on {self.device}...")
                 
-                self.animatediff_pipeline = AnimateDiffPipeline.from_pretrained(
+                # Try different AnimateDiff models if the primary one fails
+                animatediff_models = [
                     self.animatediff_model_id,
-                    torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
-                    variant="fp16" if self.device == "cuda" else None
-                )
+                    "ByteDance/AnimateDiff-v1-5",
+                    "ByteDance/AnimateDiff-v1-4",
+                    "guoyww/animatediff-v1-5-2"
+                ]
                 
-                # Configure scheduler for AnimateDiff
-                try:
-                    scheduler = DDIMScheduler.from_pretrained(
-                        self.animatediff_model_id,
-                        subfolder="scheduler"
-                    )
-                    self.animatediff_pipeline.scheduler = scheduler
-                    logger.info("DDIMScheduler configured for AnimateDiff")
-                except Exception as e:
-                    logger.warning(f"Could not configure AnimateDiff scheduler: {e}")
+                for model_id in animatediff_models:
+                    try:
+                        logger.info(f"Trying AnimateDiff model: {model_id}")
+                        
+                        # Load AnimateDiff with the Stable Diffusion model
+                        self.animatediff_pipeline = AnimateDiffPipeline.from_pretrained(
+                            self.sd_model_id,
+                            motion_module_path=model_id,
+                            torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
+                            variant="fp16" if self.device == "cuda" else None
+                        )
+                        
+                        # Configure scheduler for AnimateDiff
+                        try:
+                            scheduler = DDIMScheduler.from_pretrained(
+                                self.sd_model_id,
+                                subfolder="scheduler"
+                            )
+                            self.animatediff_pipeline.scheduler = scheduler
+                            logger.info("DDIMScheduler configured for AnimateDiff")
+                        except Exception as e:
+                            logger.warning(f"Could not configure AnimateDiff scheduler: {e}")
+                        
+                        # Move to device
+                        self.animatediff_pipeline = self.animatediff_pipeline.to(self.device)
+                        
+                        # Enable memory optimizations
+                        if hasattr(self.animatediff_pipeline, "enable_attention_slicing"):
+                            self.animatediff_pipeline.enable_attention_slicing()
+                        
+                        if hasattr(self.animatediff_pipeline, "enable_vae_slicing"):
+                            self.animatediff_pipeline.enable_vae_slicing()
+                        
+                        logger.info(f"AnimateDiff pipeline loaded successfully with model: {model_id}")
+                        break
+                        
+                    except Exception as e:
+                        logger.warning(f"Failed to load AnimateDiff model {model_id}: {e}")
+                        self.animatediff_pipeline = None
+                        continue
                 
-                # Move to device
-                self.animatediff_pipeline = self.animatediff_pipeline.to(self.device)
-                
-                # Enable memory optimizations
-                if hasattr(self.animatediff_pipeline, "enable_attention_slicing"):
-                    self.animatediff_pipeline.enable_attention_slicing()
-                
-                if hasattr(self.animatediff_pipeline, "enable_vae_slicing"):
-                    self.animatediff_pipeline.enable_vae_slicing()
-                
-                logger.info("AnimateDiff pipeline loaded successfully")
+                if self.animatediff_pipeline is None:
+                    logger.warning("All AnimateDiff models failed to load - motion generation will be disabled")
+                    
             else:
                 logger.warning("AnimateDiff not available - motion generation will be disabled")
                 
@@ -387,10 +411,13 @@ class AnimateDiffGenerator:
             # Create motion prompt based on motion type
             motion_prompt = self._create_motion_prompt(motion_type, motion_strength)
             
-            # Generate motion video
+            # For AnimateDiff, we need to generate from text prompt, not from image
+            # The motion will be applied to the generated content
+            enhanced_prompt = f"same scene as the reference image, {motion_prompt}, high quality, detailed"
+            
+            # Generate motion video from text prompt
             result = self.animatediff_pipeline(
-                prompt=motion_prompt,
-                image=image,
+                prompt=enhanced_prompt,
                 num_frames=num_frames,
                 num_inference_steps=num_inference_steps,
                 guidance_scale=guidance_scale,

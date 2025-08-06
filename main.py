@@ -625,7 +625,7 @@ async def get_available_image_generators():
                     "name": "AnimateDiff",
                     "enabled": animatediff_generator is not None,
                     "description": "AnimateDiff for adding motion to static images or prompt-based generations",
-                    "model_id": "guoyww/animatediff",
+                    "model_id": "ByteDance/AnimateDiff-v1-5",
                     "requires": "PyTorch, diffusers[animatediff] library"
                 }
             },
