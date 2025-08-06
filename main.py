@@ -835,11 +835,12 @@ async def full_pipeline_with_images(request: FullPipelineWithImagesRequest = Ful
                     narration_lines=ffmpeg_narration_lines,
                     image_paths=successful_image_paths,
                     output_path=video_path,
-                    motion_strength=0.8,
+                    motion_strength=1.0,  # Enhanced motion strength for more visible effects
                     num_frames_per_segment=12,  # Reduced for faster generation
                     video_fps=8,
                     fast_mode=True,  # Enable fast mode
-                    timeout_seconds=60  # 60 second timeout per segment
+                    timeout_seconds=60,  # 60 second timeout per segment
+                    motion_type="dynamic"  # Use dynamic motion for maximum effect
                 )
             elif request.animation_type in ["zoom_pan", "rotate", "scale"]:
                 # Use FFmpeg motion effects for faster generation

@@ -47,8 +47,8 @@ class FFmpegVideoCreator:
         audio_path: str, 
         narration_lines: List[dict], 
         output_path: str,
-        motion_strength: float = 0.8,
-        num_frames_per_segment: int = 25,
+        motion_strength: float = 1.0,  # Enhanced motion strength
+        num_frames_per_segment: int = 12,  # Reduced for faster generation
         video_fps: int = 8
     ) -> str:
         """
@@ -58,14 +58,15 @@ class FFmpegVideoCreator:
             audio_path: Path to audio file
             narration_lines: List of narration line dictionaries
             output_path: Output video path
-            motion_strength: Strength of motion in stable video diffusion
-            num_frames_per_segment: Number of frames per video segment
+            motion_strength: Strength of motion in stable video diffusion (enhanced for more visible effects)
+            num_frames_per_segment: Number of frames per video segment (reduced for speed)
             video_fps: FPS for generated motion videos
             
         Returns:
             Path to the created video
         """
         logger.info(f"Creating video with motion from {len(narration_lines)} narration lines")
+        logger.info(f"Enhanced motion settings: strength={motion_strength}, frames={num_frames_per_segment}, fps={video_fps}")
         
         # Create temporary directory for assets
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -115,37 +116,33 @@ class FFmpegVideoCreator:
             target_duration = line.get("duration", 3.0)
             logger.info(f"Creating motion video segment {index} with target duration: {target_duration}s")
             
-            # For now, use static image to ensure exact duration control
-            # This prevents the 36-minute video issue
-            logger.info(f"Using static image for segment {index} to ensure exact duration control")
-            return self._create_static_image_segment(temp_dir, line, index)
-            
-            # TODO: Re-enable motion video generation once duration issues are resolved
             # Generate image first
-            # image_path = self.sd_generator.generate_image_from_text(
-            #     text=line.get("visual_suggestion", line["text"]),
-            #     style="realistic",
-            #     seed=index * 1000
-            # )
-            # 
-            # if image_path:
-            #     # Generate motion video from the image with target duration
-            #     video_path = self.sd_generator.generate_video_from_image(
-            #         image_path=image_path,
-            #         motion_strength=motion_strength,
-            #         num_frames=num_frames,
-            #         fps=fps,
-            #         seed=index * 1000,
-            #         target_duration=target_duration  # Pass target duration directly
-            #     )
-            #     
-            #     if video_path:
-            #         logger.info(f"Motion video segment {index} created: {video_path}")
-            #         return video_path
+            image_path = self.sd_generator.generate_image_from_text(
+                text=line.get("visual_suggestion", line["text"]),
+                style="realistic",
+                seed=index * 1000
+            )
+            
+            if image_path:
+                # Generate motion video from the image with target duration
+                video_path = self.sd_generator.generate_video_from_image(
+                    image_path=image_path,
+                    motion_strength=motion_strength,
+                    num_frames=num_frames,
+                    fps=fps,
+                    seed=index * 1000,
+                    target_duration=target_duration,  # Pass target duration directly
+                    motion_type="dynamic",  # Use dynamic motion
+                    fast_mode=True
+                )
+                
+                if video_path:
+                    logger.info(f"Motion video segment {index} created: {video_path}")
+                    return video_path
             
             # Fallback to static image if video generation fails
-            # logger.warning(f"Motion video generation failed for segment {index}, using static image")
-            # return self._create_static_image_segment(temp_dir, line, index)
+            logger.warning(f"Motion video generation failed for segment {index}, using static image")
+            return self._create_static_image_segment(temp_dir, line, index)
             
         except Exception as e:
             logger.error(f"Error creating motion video segment: {e}")
