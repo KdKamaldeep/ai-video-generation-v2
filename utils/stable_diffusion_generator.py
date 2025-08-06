@@ -782,7 +782,7 @@ class StableDiffusionGenerator:
                     import numpy as np
                     processed_frames.append(np.array(frame))
                 else:  # Already numpy array
-                    # Apply color correction to fix inverted colors and artifacts
+                    # Only apply minimal color correction if needed
                     frame = self._correct_video_frame_colors(frame)
                     processed_frames.append(frame)
             
@@ -804,24 +804,10 @@ class StableDiffusionGenerator:
             # Convert to numpy array for processing
             img_array = np.array(image)
             
-            # Ensure proper color range
+            # Only ensure proper color range if needed
             if img_array.max() > 255:
                 img_array = img_array / 255.0 * 255
                 img_array = img_array.astype(np.uint8)
-            
-            # Apply slight color enhancement for better video generation
-            # Convert to float for processing
-            img_float = img_array.astype(np.float32) / 255.0
-            
-            # Apply slight contrast enhancement
-            contrast = 1.1
-            img_float = (img_float - 0.5) * contrast + 0.5
-            
-            # Clip to valid range
-            img_float = np.clip(img_float, 0, 1)
-            
-            # Convert back to uint8
-            img_array = (img_float * 255).astype(np.uint8)
             
             # Convert back to PIL Image
             from PIL import Image
@@ -844,26 +830,15 @@ class StableDiffusionGenerator:
                 else:
                     frame = frame.astype(np.uint8)
             
-            # Check if colors are inverted (common SVD issue)
-            # If the frame has very bright areas where they should be dark, invert
-            if frame.mean() > 127:  # If average brightness is too high
-                logger.info("Detected inverted colors, applying correction")
+            # Only apply corrections if there are obvious issues
+            # Check for extreme color inversion (very rare)
+            if frame.mean() > 200:  # Only if almost completely white
+                logger.info("Detected extreme color inversion, applying correction")
                 frame = 255 - frame
             
-            # Apply color normalization to fix artifacts
-            # Clip values to valid range
-            frame = np.clip(frame, 0, 255)
-            
-            # Apply slight color correction to reduce artifacts
-            # Convert to float for processing
-            frame_float = frame.astype(np.float32) / 255.0
-            
-            # Apply gamma correction to improve color balance
-            gamma = 1.1
-            frame_float = np.power(frame_float, 1/gamma)
-            
-            # Convert back to uint8
-            frame = (frame_float * 255).astype(np.uint8)
+            # Only clip values if they're outside valid range
+            if frame.min() < 0 or frame.max() > 255:
+                frame = np.clip(frame, 0, 255)
             
             return frame
             
