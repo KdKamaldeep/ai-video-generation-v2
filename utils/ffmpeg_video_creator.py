@@ -534,17 +534,22 @@ class FFmpegVideoCreator:
                 video = video_inputs[0]
             
             # Add audio
+            logger.info(f"Audio path: {audio_path}")
             audio = ffmpeg.input(audio_path)
             
             # Output final video
             logger.info(f"Rendering final video to: {output_path}")
             (
-                ffmpeg
+                ffmpeg \
                 .output(video, audio, output_path,
-                       vcodec='libx264', acodec='aac',
-                       pix_fmt='yuv420p', r=self.fps,
-                       video_bitrate='2M', audio_bitrate='128k')
-                .overwrite_output()
+                        vcodec='libx264',
+                        acodec='aac',
+                        pix_fmt='yuv420p',
+                        r=self.fps,
+                        video_bitrate='2M',
+                        audio_bitrate='128k',
+                        **{'preset': 'ultrafast'}) \
+                .overwrite_output() \
                 .run(quiet=True)
             )
             

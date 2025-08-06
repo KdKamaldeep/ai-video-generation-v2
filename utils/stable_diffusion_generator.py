@@ -77,10 +77,13 @@ class StableDiffusionGenerator:
             
             # Try to configure a better scheduler for quality
             try:
-                # First try DPMSolverMultistepScheduler
+                # First try DPMSolverMultistepScheduler with explicit configuration
                 scheduler = DPMSolverMultistepScheduler.from_pretrained(
                     self.model_id,
-                    subfolder="scheduler"
+                    subfolder="scheduler",
+                    algorithm_type="dpmsolver++",
+                    solver_type="midpoint",
+                    final_sigmas_type="sigma_min"
                 )
                 self.pipeline.scheduler = scheduler
                 logger.info("DPMSolverMultistepScheduler configured successfully")
