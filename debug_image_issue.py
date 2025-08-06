@@ -35,7 +35,8 @@ def upload_to_s3(file_path: str, file_type: str = "image") -> str:
         # Upload file
         s3_url = uploader.upload_video(
             local_file_path=file_path,
-            folder=folder
+            folder=folder,
+            content_type="image/png" 
         )
         
         if s3_url:

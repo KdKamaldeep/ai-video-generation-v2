@@ -80,7 +80,9 @@ class S3Uploader:
             logger.error(f"Error reading credentials file: {e}")
             return None
     
-    def upload_video(self, local_file_path: str, s3_key: str = None, folder: str = "youtube-shorts") -> Optional[str]:
+    def upload_video(self, local_file_path: str, 
+    s3_key: str = None, folder: str = "youtube-shorts", 
+    content_type: str = "video/mp4") -> Optional[str]:
         """
         Upload a video file to S3
         
@@ -115,7 +117,7 @@ class S3Uploader:
                 self.bucket_name,
                 s3_key,
                 ExtraArgs={
-                    'ContentType': 'video/mp4',
+                    'ContentType': content_type,
                     'ACL': 'public-read'  # Make the video publicly accessible
                 }
             )
