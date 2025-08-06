@@ -495,18 +495,22 @@ class FFmpegVideoCreator:
                 # Apply animation filter based on type
                 try:
                     if animation_type == "zoom_in":
+                        # Calculate frames for zoompan duration
+                        zoom_frames = int(duration * self.fps)
                         video_stream = (
                             ffmpeg
                             .input(image_path, loop=1, t=duration)
                             .filter('scale', self.width, self.height)
-                            .filter('zoompan', z='min(zoom+0.0015,1.5)', d=125, x='iw/2-(iw/zoom/2)', y='ih/2-(ih/zoom/2)')
+                            .filter('zoompan', z='min(zoom+0.0015,1.5)', d=zoom_frames, x='iw/2-(iw/zoom/2)', y='ih/2-(ih/zoom/2)')
                         )
                     elif animation_type == "pan":
+                        # Calculate frames for pan duration
+                        pan_frames = int(duration * self.fps)
                         video_stream = (
                             ffmpeg
                             .input(image_path, loop=1, t=duration)
                             .filter('scale', self.width * 1.2, self.height * 1.2)
-                            .filter('crop', self.width, self.height, 't*50', 't*30')
+                            .filter('crop', self.width, self.height, f't*{pan_frames//10}', f't*{pan_frames//15}')
                         )
                     elif animation_type == "fade":
                         video_stream = (
@@ -739,6 +743,82 @@ class FFmpegVideoCreator:
         except Exception as e:
             logger.error(f"Error in create_and_upload_video: {e}")
             return result
+    
+    def create_video_with_motion_images(
+        self, 
+        audio_path: str, 
+        narration_lines: List[dict], 
+        image_paths: List[str], 
+        output_path: str,
+        motion_strength: float = 0.8,
+        num_frames_per_segment: int = 25,
+        video_fps: int = 8
+    ) -> str:
+        """
+        Create a video with audio, motion videos generated from images, and subtitles
+        
+        Args:
+            audio_path: Path to audio file
+            narration_lines: List of narration line dictionaries
+            image_paths: List of image paths to convert to motion videos
+            output_path: Output video path
+            motion_strength: Strength of motion in stable video diffusion
+            num_frames_per_segment: Number of frames per video segment
+            video_fps: FPS for generated motion videos
+            
+        Returns:
+            Path to the created video
+        """
+        logger.info(f"Creating video with motion from {len(image_paths)} images and {len(narration_lines)} narration lines")
+        
+        if not self.sd_generator:
+            logger.warning("Stable diffusion generator not available, falling back to static images")
+            return self.create_video_with_images(audio_path, narration_lines, image_paths, output_path)
+        
+        # Create temporary directory for assets
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Generate motion videos from images
+            video_paths = []
+            subtitle_paths = []
+            
+            for i, (image_path, line) in enumerate(zip(image_paths, narration_lines)):
+                logger.info(f"Processing segment {i+1}/{len(image_paths)}")
+                
+                # Get target duration from the line
+                target_duration = line.get("duration", 3.0)
+                logger.info(f"Creating motion video for image {i+1} with target duration: {target_duration}s")
+                
+                # Generate motion video from the image
+                video_path = self.sd_generator.generate_video_from_image(
+                    image_path=image_path,
+                    motion_strength=motion_strength,
+                    num_frames=num_frames_per_segment,
+                    fps=video_fps,
+                    seed=i * 1000,
+                    target_duration=target_duration
+                )
+                
+                if video_path:
+                    video_paths.append(video_path)
+                    logger.info(f"Motion video {i+1} created: {video_path}")
+                else:
+                    # Fallback to static image
+                    logger.warning(f"Motion video generation failed for segment {i}, using static image")
+                    video_paths.append(image_path)
+                
+                # Create subtitle image
+                subtitle_path = os.path.join(temp_dir, f"subtitle_{i}.png")
+                self._create_subtitle_image(subtitle_path, line["text"])
+                subtitle_paths.append(subtitle_path)
+            
+            logger.info(f"Generated {len(video_paths)} video segments and {len(subtitle_paths)} subtitles")
+            
+            # Create final video using FFmpeg
+            self._combine_assets_with_motion(
+                audio_path, video_paths, subtitle_paths, narration_lines, output_path
+            )
+            
+        return output_path
     
     def cleanup(self):
         """Clean up resources"""

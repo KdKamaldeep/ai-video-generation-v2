@@ -826,14 +826,28 @@ async def full_pipeline_with_images(request: FullPipelineWithImagesRequest = Ful
         if request.use_ffmpeg:
             if ffmpeg_video_creator is None:
                 raise HTTPException(status_code=503, detail="FFmpegVideoCreator not available")
-            logger.info(f"Using FFmpegVideoCreator for video creation with {request.animation_type} animation")
-            result_video_path = ffmpeg_video_creator.create_video_with_images(
-                audio_path=audio_path,
-                narration_lines=ffmpeg_narration_lines,
-                image_paths=successful_image_paths,
-                output_path=video_path,
-                animation_type=request.animation_type
-            )
+            
+            # Choose between motion video and static image video
+            if request.use_stable_diffusion and ffmpeg_video_creator.sd_generator:
+                logger.info(f"Using FFmpegVideoCreator with Stable Video Diffusion for motion videos")
+                result_video_path = ffmpeg_video_creator.create_video_with_motion_images(
+                    audio_path=audio_path,
+                    narration_lines=ffmpeg_narration_lines,
+                    image_paths=successful_image_paths,
+                    output_path=video_path,
+                    motion_strength=0.8,
+                    num_frames_per_segment=25,
+                    video_fps=8
+                )
+            else:
+                logger.info(f"Using FFmpegVideoCreator for video creation with {request.animation_type} animation")
+                result_video_path = ffmpeg_video_creator.create_video_with_images(
+                    audio_path=audio_path,
+                    narration_lines=ffmpeg_narration_lines,
+                    image_paths=successful_image_paths,
+                    output_path=video_path,
+                    animation_type=request.animation_type
+                )
         else:
             if video_creator is None:
                 raise HTTPException(status_code=503, detail="ShotstackVideoCreator not available")
