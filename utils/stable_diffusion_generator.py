@@ -549,8 +549,6 @@ class StableDiffusionGenerator:
                     'fps': fps,
                     'noise_aug_strength': noise_aug_strength,  # Increased for more visible motion
                     'num_frames': num_frames,
-                    'guidance_scale': 1.0,  # Lower guidance scale for better color preservation
-                    'num_inference_steps': 14 if fast_mode else 25,  # Fewer steps for faster generation
                 }
                 
                 if seed is not None:
