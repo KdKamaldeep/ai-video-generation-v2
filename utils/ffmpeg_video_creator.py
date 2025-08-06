@@ -611,15 +611,24 @@ class FFmpegVideoCreator:
                 # Create video
                 logger.info(f"Creating simple video with background image")
                 (
-                    ffmpeg
-                    .input(tmp_img.name, loop=1, t=duration)
-                    .input(audio_path)
-                    .output(output_path,
-                           vcodec='libx264', acodec='aac',
-                           pix_fmt='yuv420p', r=self.fps,
-                           video_bitrate='2M', audio_bitrate='128k')
-                    .overwrite_output()
-                    .run(quiet=True)
+                    process = (
+                        ffmpeg
+                        .output(video, audio, output_path,
+                                vcodec='h264_nvenc',
+                                acodec='aac',
+                                pix_fmt='yuv420p',
+                                r=30,
+                                video_bitrate='4M',
+                                audio_bitrate='128k',
+                                shortest=None,
+                                **{'preset': 'fast'})
+                        .overwrite_output()
+                        .run_async(pipe_stderr=True)
+                    )
+
+                    # Print progress lines in real-time
+                    for line in process.stderr:
+                        logger.info(line.decode('utf-8').strip())
                 )
                 
                 # Clean up
