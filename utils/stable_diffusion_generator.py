@@ -415,7 +415,8 @@ class StableDiffusionGenerator:
         fps: int = 8,
         seed: Optional[int] = None,
         motion_bucket_id: int = 127,
-        noise_aug_strength: float = 0.1
+        noise_aug_strength: float = 0.1,
+        target_duration: Optional[float] = None  # Add target duration parameter
     ) -> Optional[str]:
         """
         Generate a motion video from a single image using Stable Video Diffusion
@@ -423,11 +424,12 @@ class StableDiffusionGenerator:
         Args:
             image_path: Path to the input image
             motion_strength: Strength of motion (0.0 to 1.0)
-            num_frames: Number of frames to generate
+            num_frames: Number of frames to generate (overridden by target_duration if provided)
             fps: Frames per second for the output video
             seed: Random seed for reproducibility
             motion_bucket_id: Motion bucket ID for different motion types
             noise_aug_strength: Noise augmentation strength
+            target_duration: Target duration in seconds (overrides num_frames if provided)
             
         Returns:
             Local path to the generated video, or None if failed
@@ -438,6 +440,11 @@ class StableDiffusionGenerator:
         
         try:
             logger.info(f"Generating video from image: {image_path}")
+            
+            # Calculate exact number of frames if target duration is provided
+            if target_duration is not None:
+                num_frames = int(target_duration * fps)
+                logger.info(f"Target duration: {target_duration}s, FPS: {fps}, Calculated frames: {num_frames}")
             
             # Set random seed
             if seed is not None:
@@ -471,11 +478,26 @@ class StableDiffusionGenerator:
             
             logger.info(f"Generated {len(video_frames)} video frames")
             
+            # Limit frames to target duration if specified
+            if target_duration is not None:
+                max_frames = int(target_duration * fps)
+                if len(video_frames) > max_frames:
+                    video_frames = video_frames[:max_frames]
+                    logger.info(f"Limited frames to {len(video_frames)} for target duration")
+                elif len(video_frames) < max_frames:
+                    # Repeat last frame to reach target duration
+                    last_frame = video_frames[-1] if video_frames else None
+                    while len(video_frames) < max_frames and last_frame is not None:
+                        video_frames.append(last_frame.copy())
+                    logger.info(f"Extended frames to {len(video_frames)} for target duration")
+            
             # Save video
             video_path = self._save_video(video_frames, image_path, seed, fps)
             
             if video_path:
+                actual_duration = len(video_frames) / fps
                 logger.info(f"Video generated and saved: {video_path}")
+                logger.info(f"Actual duration: {actual_duration:.2f} seconds")
                 return video_path
             else:
                 logger.error("Failed to save video")
