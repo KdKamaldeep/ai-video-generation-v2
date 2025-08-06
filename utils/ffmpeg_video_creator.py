@@ -353,7 +353,7 @@ class FFmpegVideoCreator:
                 
                 # Check if it's a video file or image
                 if video_path.endswith('.mp4'):
-                    # It's a motion video
+                    logger.info(f"It's a motion video===============")
                     video_stream = (
                         ffmpeg
                         .input(video_path)
@@ -751,8 +751,10 @@ class FFmpegVideoCreator:
         image_paths: List[str], 
         output_path: str,
         motion_strength: float = 0.8,
-        num_frames_per_segment: int = 25,
-        video_fps: int = 8
+        num_frames_per_segment: int = 12,  # Reduced for faster generation
+        video_fps: int = 8,
+        fast_mode: bool = True,  # Enable fast mode by default
+        timeout_seconds: int = 60  # Timeout for each motion video generation
     ) -> str:
         """
         Create a video with audio, motion videos generated from images, and subtitles
@@ -763,13 +765,16 @@ class FFmpegVideoCreator:
             image_paths: List of image paths to convert to motion videos
             output_path: Output video path
             motion_strength: Strength of motion in stable video diffusion
-            num_frames_per_segment: Number of frames per video segment
+            num_frames_per_segment: Number of frames per video segment (reduced for speed)
             video_fps: FPS for generated motion videos
+            fast_mode: Use fast mode for quicker generation
+            timeout_seconds: Timeout for each motion video generation
             
         Returns:
             Path to the created video
         """
         logger.info(f"Creating video with motion from {len(image_paths)} images and {len(narration_lines)} narration lines")
+        logger.info(f"Fast mode: {fast_mode}, Timeout: {timeout_seconds}s per segment")
         
         if not self.sd_generator:
             logger.warning("Stable diffusion generator not available, falling back to static images")
@@ -780,6 +785,8 @@ class FFmpegVideoCreator:
             # Generate motion videos from images
             video_paths = []
             subtitle_paths = []
+            motion_videos_created = 0
+            static_images_used = 0
             
             for i, (image_path, line) in enumerate(zip(image_paths, narration_lines)):
                 logger.info(f"Processing segment {i+1}/{len(image_paths)}")
@@ -788,30 +795,55 @@ class FFmpegVideoCreator:
                 target_duration = line.get("duration", 3.0)
                 logger.info(f"Creating motion video for image {i+1} with target duration: {target_duration}s")
                 
-                # Generate motion video from the image
-                video_path = self.sd_generator.generate_video_from_image(
-                    image_path=image_path,
-                    motion_strength=motion_strength,
-                    num_frames=num_frames_per_segment,
-                    fps=video_fps,
-                    seed=i * 1000,
-                    target_duration=target_duration
-                )
+                # Try to generate motion video with timeout
+                video_path = None
+                try:
+                    import signal
+                    
+                    def timeout_handler(signum, frame):
+                        raise TimeoutError(f"Motion video generation timed out after {timeout_seconds} seconds")
+                    
+                    # Set timeout
+                    signal.signal(signal.SIGALRM, timeout_handler)
+                    signal.alarm(timeout_seconds)
+                    
+                    # Generate motion video from the image
+                    video_path = self.sd_generator.generate_video_from_image(
+                        image_path=image_path,
+                        motion_strength=motion_strength,
+                        num_frames=num_frames_per_segment,
+                        fps=video_fps,
+                        seed=i * 1000,
+                        target_duration=target_duration,
+                        fast_mode=fast_mode
+                    )
+                    
+                    # Cancel timeout
+                    signal.alarm(0)
+                    
+                except TimeoutError:
+                    logger.warning(f"Motion video generation timed out for segment {i+1}, using static image")
+                    video_path = None
+                except Exception as e:
+                    logger.error(f"Error generating motion video for segment {i+1}: {e}")
+                    video_path = None
                 
                 if video_path:
                     video_paths.append(video_path)
+                    motion_videos_created += 1
                     logger.info(f"Motion video {i+1} created: {video_path}")
                 else:
                     # Fallback to static image
                     logger.warning(f"Motion video generation failed for segment {i}, using static image")
                     video_paths.append(image_path)
+                    static_images_used += 1
                 
                 # Create subtitle image
                 subtitle_path = os.path.join(temp_dir, f"subtitle_{i}.png")
                 self._create_subtitle_image(subtitle_path, line["text"])
                 subtitle_paths.append(subtitle_path)
             
-            logger.info(f"Generated {len(video_paths)} video segments and {len(subtitle_paths)} subtitles")
+            logger.info(f"Generated {len(video_paths)} video segments: {motion_videos_created} motion videos, {static_images_used} static images")
             
             # Create final video using FFmpeg
             self._combine_assets_with_motion(
@@ -819,6 +851,184 @@ class FFmpegVideoCreator:
             )
             
         return output_path
+    
+    def create_video_with_ffmpeg_motion(
+        self, 
+        audio_path: str, 
+        narration_lines: List[dict], 
+        image_paths: List[str], 
+        output_path: str,
+        motion_type: str = "zoom_pan"  # zoom_pan, rotate, scale, etc.
+    ) -> str:
+        """
+        Create a video with audio, FFmpeg motion effects on images, and subtitles
+        This is much faster than Stable Video Diffusion but less sophisticated
+        
+        Args:
+            audio_path: Path to audio file
+            narration_lines: List of narration line dictionaries
+            image_paths: List of image paths to apply motion effects to
+            output_path: Output video path
+            motion_type: Type of motion effect (zoom_pan, rotate, scale, etc.)
+            
+        Returns:
+            Path to the created video
+        """
+        logger.info(f"Creating video with FFmpeg motion effects from {len(image_paths)} images")
+        
+        # Create temporary directory for assets
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Create subtitle images
+            subtitle_paths = []
+            for i, line in enumerate(narration_lines):
+                subtitle_path = os.path.join(temp_dir, f"subtitle_{i}.png")
+                self._create_subtitle_image(subtitle_path, line["text"])
+                subtitle_paths.append(subtitle_path)
+            
+            # Create final video using FFmpeg with motion effects
+            self._combine_images_with_ffmpeg_motion(
+                audio_path, image_paths, subtitle_paths, narration_lines, output_path, motion_type
+            )
+            
+        return output_path
+    
+    def _combine_images_with_ffmpeg_motion(
+        self, 
+        audio_path: str, 
+        image_paths: List[str], 
+        subtitle_paths: List[str], 
+        narration_lines: List[dict], 
+        output_path: str,
+        motion_type: str
+    ):
+        """Combine images with FFmpeg motion effects, audio, and subtitles into final video"""
+        
+        try:
+            # Get audio duration
+            audio_duration = 30.0  # Default fallback duration
+            try:
+                probe = ffmpeg.probe(audio_path)
+                if probe and 'streams' in probe and len(probe['streams']) > 0:
+                    if 'duration' in probe['streams'][0]:
+                        audio_duration = float(probe['streams'][0]['duration'])
+                    else:
+                        # Try to get duration from format info
+                        if 'format' in probe and 'duration' in probe['format']:
+                            audio_duration = float(probe['format']['duration'])
+                logger.info(f"Audio duration: {audio_duration} seconds")
+            except Exception as e:
+                logger.warning(f"Could not probe audio duration: {e}, using default {audio_duration}s")
+            
+            # Create video stream from images with motion effects
+            video_inputs = []
+            current_time = 0
+            
+            # Ensure we have the same number of images and narration lines
+            min_count = min(len(image_paths), len(subtitle_paths), len(narration_lines))
+            logger.info(f"Processing {min_count} segments with FFmpeg motion effects")
+            
+            for i in range(min_count):
+                image_path = image_paths[i]
+                subtitle_path = subtitle_paths[i]
+                line = narration_lines[i]
+                duration = line.get("duration", 3.0)
+                logger.info(f"Processing segment {i+1}: duration={duration}s, motion={motion_type}")
+                
+                # Apply FFmpeg motion effects based on type
+                try:
+                    if motion_type == "zoom_pan":
+                        # Zoom and pan effect
+                        video_stream = (
+                            ffmpeg
+                            .input(image_path, loop=1, t=duration)
+                            .filter('scale', self.width * 1.2, self.height * 1.2)
+                            .filter('crop', self.width, self.height, f't*{int(duration*10)}', f't*{int(duration*5)}')
+                        )
+                    elif motion_type == "zoom_in":
+                        # Zoom in effect
+                        zoom_frames = int(duration * self.fps)
+                        video_stream = (
+                            ffmpeg
+                            .input(image_path, loop=1, t=duration)
+                            .filter('scale', self.width, self.height)
+                            .filter('zoompan', z='min(zoom+0.002,1.3)', d=zoom_frames, x='iw/2-(iw/zoom/2)', y='ih/2-(ih/zoom/2)')
+                        )
+                    elif motion_type == "rotate":
+                        # Rotation effect
+                        video_stream = (
+                            ffmpeg
+                            .input(image_path, loop=1, t=duration)
+                            .filter('scale', self.width, self.height)
+                            .filter('rotate', angle=f't*{360/duration}', fillcolor='black')
+                        )
+                    elif motion_type == "scale":
+                        # Scale effect
+                        video_stream = (
+                            ffmpeg
+                            .input(image_path, loop=1, t=duration)
+                            .filter('scale', self.width, self.height)
+                            .filter('scale', f'iw*{1.1 + 0.1*sin(t)}', f'ih*{1.1 + 0.1*sin(t)}')
+                        )
+                    else:
+                        # Default: static image
+                        video_stream = (
+                            ffmpeg
+                            .input(image_path, loop=1, t=duration)
+                            .filter('scale', self.width, self.height)
+                        )
+                except Exception as e:
+                    logger.warning(f"FFmpeg motion effect {motion_type} failed: {e}, using static image")
+                    # Fallback to static image
+                    video_stream = (
+                        ffmpeg
+                        .input(image_path, loop=1, t=duration)
+                        .filter('scale', self.width, self.height)
+                    )
+                
+                # Create subtitle stream
+                subtitle_stream = (
+                    ffmpeg
+                    .input(subtitle_path, loop=1, t=duration)
+                    .filter('scale', self.width, self.height)
+                )
+                
+                # Overlay subtitle on video
+                combined = ffmpeg.overlay(video_stream, subtitle_stream, x=0, y=0)
+                video_inputs.append(combined)
+                
+                current_time += duration
+            
+            # Concatenate all video segments
+            if len(video_inputs) > 1:
+                video = ffmpeg.concat(*video_inputs, v=1, a=0)
+            else:
+                video = video_inputs[0]
+            
+            # Add audio
+            logger.info(f"Audio path: {audio_path}")
+            audio = ffmpeg.input(audio_path)
+            
+            # Output final video
+            logger.info(f"Rendering final video with FFmpeg motion effects to: {output_path}")
+            (
+                ffmpeg.output(
+                    video, audio, output_path,
+                    vcodec='h264_nvenc',           # GPU encoder
+                    acodec='aac',
+                    pix_fmt='yuv420p',
+                    r=self.fps,
+                    video_bitrate='4M',            # You can tweak this
+                    audio_bitrate='128k',
+                    **{'preset': 'fast'}           # Fastest reliable preset for NVENC
+                ).overwrite_output().run(quiet=True)
+            )
+            
+            logger.info(f"Video with FFmpeg motion effects created successfully: {output_path}")
+            
+        except Exception as e:
+            logger.error(f"Error combining images with FFmpeg motion: {e}")
+            # Fallback to simple video creation
+            self.create_simple_video(audio_path, output_path, audio_duration)
     
     def cleanup(self):
         """Clean up resources"""

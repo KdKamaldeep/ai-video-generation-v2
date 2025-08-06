@@ -827,7 +827,7 @@ async def full_pipeline_with_images(request: FullPipelineWithImagesRequest = Ful
             if ffmpeg_video_creator is None:
                 raise HTTPException(status_code=503, detail="FFmpegVideoCreator not available")
             
-            # Choose between motion video and static image video
+            # Choose between different video creation methods
             if request.use_stable_diffusion and ffmpeg_video_creator.sd_generator:
                 logger.info(f"Using FFmpegVideoCreator with Stable Video Diffusion for motion videos")
                 result_video_path = ffmpeg_video_creator.create_video_with_motion_images(
@@ -836,10 +836,23 @@ async def full_pipeline_with_images(request: FullPipelineWithImagesRequest = Ful
                     image_paths=successful_image_paths,
                     output_path=video_path,
                     motion_strength=0.8,
-                    num_frames_per_segment=25,
-                    video_fps=8
+                    num_frames_per_segment=12,  # Reduced for faster generation
+                    video_fps=8,
+                    fast_mode=True,  # Enable fast mode
+                    timeout_seconds=60  # 60 second timeout per segment
+                )
+            elif request.animation_type in ["zoom_pan", "rotate", "scale"]:
+                # Use FFmpeg motion effects for faster generation
+                logger.info(f"Using FFmpegVideoCreator with FFmpeg motion effects: {request.animation_type}")
+                result_video_path = ffmpeg_video_creator.create_video_with_ffmpeg_motion(
+                    audio_path=audio_path,
+                    narration_lines=ffmpeg_narration_lines,
+                    image_paths=successful_image_paths,
+                    output_path=video_path,
+                    motion_type=request.animation_type
                 )
             else:
+                # Use static images with FFmpeg animations
                 logger.info(f"Using FFmpegVideoCreator for video creation with {request.animation_type} animation")
                 result_video_path = ffmpeg_video_creator.create_video_with_images(
                     audio_path=audio_path,

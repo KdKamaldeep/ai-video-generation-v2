@@ -411,12 +411,13 @@ class StableDiffusionGenerator:
         self,
         image_path: str,
         motion_strength: float = 0.8,
-        num_frames: int = 25,
+        num_frames: int = 15,  # Reduced from 25 to 15 for faster generation
         fps: int = 8,
         seed: Optional[int] = None,
         motion_bucket_id: int = 127,
         noise_aug_strength: float = 0.1,
-        target_duration: Optional[float] = None  # Add target duration parameter
+        target_duration: Optional[float] = None,  # Add target duration parameter
+        fast_mode: bool = True  # Add fast mode for quicker generation
     ) -> Optional[str]:
         """
         Generate a motion video from a single image using Stable Video Diffusion
@@ -430,6 +431,7 @@ class StableDiffusionGenerator:
             motion_bucket_id: Motion bucket ID for different motion types
             noise_aug_strength: Noise augmentation strength
             target_duration: Target duration in seconds (overrides num_frames if provided)
+            fast_mode: Use faster settings for quicker generation
             
         Returns:
             Local path to the generated video, or None if failed
@@ -446,6 +448,18 @@ class StableDiffusionGenerator:
                 num_frames = int(target_duration * fps)
                 logger.info(f"Target duration: {target_duration}s, FPS: {fps}, Calculated frames: {num_frames}")
             
+            # Optimize for speed if fast_mode is enabled
+            if fast_mode:
+                # Reduce frames for faster generation
+                if num_frames > 12:
+                    num_frames = 12
+                    logger.info(f"Fast mode: Reduced frames to {num_frames} for quicker generation")
+                
+                # Use smaller image size for faster processing
+                target_size = (512, 288)  # Smaller size for faster generation
+            else:
+                target_size = (1024, 576)  # Original size
+            
             # Set random seed
             if seed is not None:
                 torch.manual_seed(seed)
@@ -459,24 +473,48 @@ class StableDiffusionGenerator:
             if image.mode != 'RGB':
                 image = image.convert('RGB')
             
-            # Resize image to standard size for video generation
-            target_size = (1024, 576)  # 16:9 aspect ratio
+            # Resize image for video generation
             image = image.resize(target_size, Image.Resampling.LANCZOS)
             
             logger.info(f"Processing image with size: {image.size}")
             
-            # Generate video frames
-            video_frames = self.video_pipeline(
-                image,
-                decode_chunk_size=8,
-                motion_bucket_id=motion_bucket_id,
-                fps=fps,
-                noise_aug_strength=noise_aug_strength,
-                num_frames=num_frames,
-                generator=torch.Generator(device=self.device).manual_seed(seed) if seed else None
-            ).frames[0]
+            # Add timeout protection
+            import signal
+            import time
             
-            logger.info(f"Generated {len(video_frames)} video frames")
+            def timeout_handler(signum, frame):
+                raise TimeoutError("Video generation timed out")
+            
+            # Set timeout to 60 seconds
+            signal.signal(signal.SIGALRM, timeout_handler)
+            signal.alarm(60)
+            
+            try:
+                # Generate video frames with optimized settings
+                pipeline_kwargs = {
+                    'decode_chunk_size': 4 if fast_mode else 8,  # Smaller chunks for faster processing
+                    'motion_bucket_id': motion_bucket_id,
+                    'fps': fps,
+                    'noise_aug_strength': noise_aug_strength,
+                    'num_frames': num_frames,
+                }
+                
+                if seed is not None:
+                    pipeline_kwargs['generator'] = torch.Generator(device=self.device).manual_seed(seed)
+                
+                video_frames = self.video_pipeline(image, **pipeline_kwargs).frames[0]
+                
+                # Cancel timeout
+                signal.alarm(0)
+                
+                logger.info(f"Generated {len(video_frames)} video frames in fast mode")
+                
+            except TimeoutError:
+                logger.error("Video generation timed out after 60 seconds")
+                return None
+            except Exception as e:
+                logger.error(f"Error during video generation: {e}")
+                return None
             
             # Limit frames to target duration if specified
             if target_duration is not None:
