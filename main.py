@@ -754,7 +754,7 @@ async def full_pipeline_with_images(request: FullPipelineWithImagesRequest = Ful
         logger.info("Step 4: Creating video with audio and images...")
         video_filename = f"shorts_with_images_{timestamp}.mp4"
         video_path = os.path.join("output", video_filename)
-        
+        logger.info(f"Video path: {video_path} and audio path: {audio_path} filename: {video_filename}")
         # Convert script lines to narration format for FFmpeg
         ffmpeg_narration_lines = []
         for i, line in enumerate(script.narration):
@@ -764,6 +764,7 @@ async def full_pipeline_with_images(request: FullPipelineWithImagesRequest = Ful
                 "duration": duration,
                 "visual_suggestion": successful_image_paths[i] if i < len(successful_image_paths) else successful_image_paths[0]
             })
+            logger.info(f"FFmpeg narration line: {ffmpeg_narration_lines}")
         
         # Convert script lines to narration format for Shotstack
         shotstack_narration_lines = []

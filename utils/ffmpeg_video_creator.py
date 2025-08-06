@@ -311,9 +311,19 @@ class FFmpegVideoCreator:
         
         try:
             # Get audio duration
-            probe = ffmpeg.probe(audio_path)
-            audio_duration = float(probe['streams'][0]['duration'])
-            logger.info(f"Audio duration: {audio_duration} seconds")
+            audio_duration = 30.0  # Default fallback duration
+            try:
+                probe = ffmpeg.probe(audio_path)
+                if probe and 'streams' in probe and len(probe['streams']) > 0:
+                    if 'duration' in probe['streams'][0]:
+                        audio_duration = float(probe['streams'][0]['duration'])
+                    else:
+                        # Try to get duration from format info
+                        if 'format' in probe and 'duration' in probe['format']:
+                            audio_duration = float(probe['format']['duration'])
+                logger.info(f"Audio duration: {audio_duration} seconds")
+            except Exception as e:
+                logger.warning(f"Could not probe audio duration: {e}, using default {audio_duration}s")
             
             # Create video stream from motion videos or images
             video_inputs = []
@@ -435,9 +445,19 @@ class FFmpegVideoCreator:
         
         try:
             # Get audio duration
-            probe = ffmpeg.probe(audio_path)
-            audio_duration = float(probe['streams'][0]['duration'])
-            logger.info(f"Audio duration: {audio_duration} seconds")
+            audio_duration = 30.0  # Default fallback duration
+            try:
+                probe = ffmpeg.probe(audio_path)
+                if probe and 'streams' in probe and len(probe['streams']) > 0:
+                    if 'duration' in probe['streams'][0]:
+                        audio_duration = float(probe['streams'][0]['duration'])
+                    else:
+                        # Try to get duration from format info
+                        if 'format' in probe and 'duration' in probe['format']:
+                            audio_duration = float(probe['format']['duration'])
+                logger.info(f"Audio duration: {audio_duration} seconds")
+            except Exception as e:
+                logger.warning(f"Could not probe audio duration: {e}, using default {audio_duration}s")
             
             # Create video stream from images
             video_inputs = []
