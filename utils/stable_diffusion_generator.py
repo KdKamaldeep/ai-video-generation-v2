@@ -384,7 +384,7 @@ class StableDiffusionGenerator:
     def _get_default_negative_prompt(self) -> str:
         """Get default negative prompt to avoid common issues"""
         return (
-            "blurry, low quality, distorted, watermark, signature, text, logo"
+            "blurry, low quality, watermark, signature, text, logo"
         )
     
     def _save_image(self, image: Image.Image, text: str, seed: Optional[int] = None) -> Optional[str]:
