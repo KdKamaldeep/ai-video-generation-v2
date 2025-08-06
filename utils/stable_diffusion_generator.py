@@ -564,6 +564,13 @@ class StableDiffusionGenerator:
                 signal.alarm(0)
                 
                 logger.info(f"Generated {len(video_frames)} video frames")
+                
+                # Convert PIL Images to numpy arrays if needed
+                if video_frames and hasattr(video_frames[0], 'size'):  # PIL Image object
+                    logger.info("Converting PIL Images to numpy arrays")
+                    import numpy as np
+                    video_frames = [np.array(frame) for frame in video_frames]
+                
                 logger.info(f"Frame shape: {video_frames[0].shape if video_frames else 'No frames'}")
                 
                 # Check if frames actually have motion
@@ -742,7 +749,7 @@ class StableDiffusionGenerator:
         
         return all_variations
     
-    def _save_video(self, video_frames: List[np.ndarray], original_image_path: str, 
+    def _save_video(self, video_frames: List, original_image_path: str, 
                    seed: Optional[int] = None, fps: int = 8) -> Optional[str]:
         """Save the generated video frames to disk"""
         try:
@@ -760,8 +767,17 @@ class StableDiffusionGenerator:
             # Save to video output directory
             output_path = os.path.join(self.video_output_dir, filename)
             
+            # Ensure frames are in the correct format for export_to_video
+            processed_frames = []
+            for frame in video_frames:
+                if hasattr(frame, 'size'):  # PIL Image object
+                    import numpy as np
+                    processed_frames.append(np.array(frame))
+                else:  # Already numpy array
+                    processed_frames.append(frame)
+            
             # Convert frames to video
-            export_to_video(video_frames, output_path, fps=fps)
+            export_to_video(processed_frames, output_path, fps=fps)
             
             logger.info(f"Video saved to: {output_path}")
             return output_path
