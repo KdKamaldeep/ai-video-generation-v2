@@ -127,6 +127,9 @@ class FullPipelineWithImagesRequest(BaseModel):
     use_existing_script: bool = False
     # Story type for script generation (if not using existing script)
     story_type: str = "motivation"
+    # S3 upload options
+    upload_to_s3: bool = True
+    s3_folder: str = "youtube-shorts"
 
 class ScriptRetryRequest(BaseModel):
     retry: bool = True
@@ -135,6 +138,11 @@ class ScriptRetryRequest(BaseModel):
 
 class GenerateScriptRequest(BaseModel):
     story_type: str = "motivation"
+
+class S3UploadRequest(BaseModel):
+    video_path: str
+    s3_key: str = None
+    folder: str = "youtube-shorts"
 
 # Create necessary directories
 logger.info("Creating necessary directories...")
@@ -584,6 +592,42 @@ async def get_available_image_generators():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get image generators: {str(e)}")
 
+@app.post("/upload-to-s3")
+async def upload_to_s3(request: S3UploadRequest):
+    """Upload a video to S3 bucket"""
+    try:
+        if not ffmpeg_video_creator:
+            raise HTTPException(status_code=500, detail="FFmpeg video creator not available")
+        
+        if not os.path.exists(request.video_path):
+            raise HTTPException(status_code=404, detail=f"Video file not found: {request.video_path}")
+        
+        logger.info(f"Uploading video to S3: {request.video_path}")
+        
+        # Upload to S3
+        s3_url = ffmpeg_video_creator.upload_to_s3(
+            video_path=request.video_path,
+            s3_key=request.s3_key,
+            folder=request.folder
+        )
+        
+        if s3_url:
+            return {
+                "success": True,
+                "message": "Video uploaded to S3 successfully",
+                "s3_url": s3_url,
+                "local_path": request.video_path,
+                "s3_key": request.s3_key or f"{request.folder}/{os.path.basename(request.video_path)}"
+            }
+        else:
+            raise HTTPException(status_code=500, detail="Failed to upload video to S3")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error uploading to S3: {e}")
+        raise HTTPException(status_code=500, detail=f"Error uploading to S3: {str(e)}")
+
 @app.get("/download/{file_type}/{filename}")
 async def download_file(file_type: str, filename: str):
     """Download generated files"""
@@ -798,6 +842,22 @@ async def full_pipeline_with_images(request: FullPipelineWithImagesRequest = Ful
         
         logger.info(f"Video with images created: {result_video_path}")
         
+        # Step 5: Upload to S3 (optional)
+        s3_url = None
+        if request.upload_to_s3 and ffmpeg_video_creator:
+            try:
+                logger.info("Step 5: Uploading video to S3...")
+                s3_url = ffmpeg_video_creator.upload_to_s3(
+                    video_path=result_video_path,
+                    folder=request.s3_folder
+                )
+                if s3_url:
+                    logger.info(f"Video uploaded to S3: {s3_url}")
+                else:
+                    logger.warning("Failed to upload video to S3")
+            except Exception as e:
+                logger.error(f"Error uploading to S3: {e}")
+        
         return {
             "success": True,
             "script": script.dict(),
@@ -808,6 +868,8 @@ async def full_pipeline_with_images(request: FullPipelineWithImagesRequest = Ful
             "animation_type": request.animation_type if request.use_ffmpeg else "N/A",
             "image_generator": generator_name,
             "script_source": "existing" if request.use_existing_script else "generated",
+            "s3_url": s3_url,
+            "uploaded_to_s3": s3_url is not None,
             "message": "Full pipeline with images completed successfully"
         }
     except Exception as e:

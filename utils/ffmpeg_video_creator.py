@@ -6,6 +6,7 @@ from PIL import Image, ImageDraw, ImageFont
 import json
 import logging
 from .stable_diffusion_generator import StableDiffusionGenerator
+from .s3_uploader import S3Uploader
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +32,15 @@ class FFmpegVideoCreator:
             except Exception as e:
                 logger.warning(f"Failed to initialize stable diffusion generator: {e}")
                 self.use_stable_video_diffusion = False
+        
+        # Initialize S3 uploader
+        self.s3_uploader = None
+        try:
+            self.s3_uploader = S3Uploader()
+            logger.info("S3 uploader initialized for video uploads")
+        except Exception as e:
+            logger.warning(f"Failed to initialize S3 uploader: {e}")
+            self.s3_uploader = None
     
     def create_video_with_motion(
         self, 
@@ -540,17 +550,16 @@ class FFmpegVideoCreator:
             # Output final video
             logger.info(f"Rendering final video to: {output_path}")
             (
-                ffmpeg \
-                .output(video, audio, output_path,
-                        vcodec='libx264',
-                        acodec='aac',
-                        pix_fmt='yuv420p',
-                        r=self.fps,
-                        video_bitrate='2M',
-                        audio_bitrate='128k',
-                        **{'preset': 'ultrafast'}) \
-                .overwrite_output() \
-                .run(quiet=True)
+                ffmpeg.output(
+                    video, audio, output_path,
+                    vcodec='h264_nvenc',           # GPU encoder
+                    acodec='aac',
+                    pix_fmt='yuv420p',
+                    r=self.fps,
+                    video_bitrate='4M',            # You can tweak this
+                    audio_bitrate='128k',
+                    **{'preset': 'fast'}           # Fastest reliable preset for NVENC
+                ).overwrite_output().run(quiet=True)
             )
             
             logger.info(f"Video created successfully: {output_path}")
@@ -622,6 +631,99 @@ class FFmpegVideoCreator:
         except Exception as e:
             logger.error(f"Error creating simple video: {e}")
             raise
+    
+    def upload_to_s3(self, video_path: str, s3_key: str = None, folder: str = "youtube-shorts") -> Optional[str]:
+        """
+        Upload the final video to S3 bucket
+        
+        Args:
+            video_path: Path to the local video file
+            s3_key: Custom S3 key (optional, will generate if not provided)
+            folder: S3 folder path (default: youtube-shorts)
+            
+        Returns:
+            S3 URL of uploaded video or None if failed
+        """
+        if not self.s3_uploader:
+            logger.error("S3 uploader not initialized")
+            return None
+        
+        if not os.path.exists(video_path):
+            logger.error(f"Video file does not exist: {video_path}")
+            return None
+        
+        try:
+            logger.info(f"Uploading video to S3: {video_path}")
+            s3_url = self.s3_uploader.upload_video(video_path, s3_key, folder)
+            
+            if s3_url:
+                logger.info(f"Video successfully uploaded to S3: {s3_url}")
+                return s3_url
+            else:
+                logger.error("Failed to upload video to S3")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Error uploading video to S3: {e}")
+            return None
+    
+    def create_and_upload_video(
+        self,
+        audio_path: str,
+        narration_lines: List[dict],
+        image_paths: List[str] = None,
+        output_path: str = None,
+        upload_to_s3: bool = True,
+        s3_folder: str = "youtube-shorts"
+    ) -> dict:
+        """
+        Create video and optionally upload to S3
+        
+        Args:
+            audio_path: Path to audio file
+            narration_lines: List of narration line dictionaries
+            image_paths: List of image paths (optional, for image-based videos)
+            output_path: Output video path (optional, will generate if not provided)
+            upload_to_s3: Whether to upload to S3 after creation
+            s3_folder: S3 folder path
+            
+        Returns:
+            Dictionary with local_path and s3_url (if uploaded)
+        """
+        result = {"local_path": None, "s3_url": None}
+        
+        try:
+            # Generate output path if not provided
+            if not output_path:
+                import time
+                timestamp = int(time.time())
+                output_path = f"output/shorts_with_images_{timestamp}.mp4"
+                
+                # Ensure output directory exists
+                os.makedirs(os.path.dirname(output_path), exist_ok=True)
+            
+            # Create video
+            if image_paths:
+                logger.info("Creating video with images")
+                result["local_path"] = self.create_video_with_images(
+                    audio_path, narration_lines, image_paths, output_path
+                )
+            else:
+                logger.info("Creating video with motion")
+                result["local_path"] = self.create_video_with_motion(
+                    audio_path, narration_lines, output_path
+                )
+            
+            # Upload to S3 if requested
+            if upload_to_s3 and result["local_path"]:
+                logger.info("Uploading video to S3")
+                result["s3_url"] = self.upload_to_s3(result["local_path"], folder=s3_folder)
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error in create_and_upload_video: {e}")
+            return result
     
     def cleanup(self):
         """Clean up resources"""
