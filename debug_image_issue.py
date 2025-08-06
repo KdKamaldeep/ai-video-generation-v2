@@ -12,6 +12,45 @@ import time
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+def upload_to_s3(file_path: str, file_type: str = "image") -> str:
+    """
+    Upload generated file to S3
+    
+    Args:
+        file_path: Path to the file to upload
+        file_type: Type of file ("image" or "video")
+        
+    Returns:
+        S3 URL of uploaded file or None if failed
+    """
+    try:
+        from utils.s3_uploader import S3Uploader
+        
+        print(f"📤 Uploading {file_type} to S3...")
+        uploader = S3Uploader()
+        
+        # Determine folder based on file type
+        folder = "debug-images" if file_type == "image" else "debug-videos"
+        
+        # Upload file
+        s3_url = uploader.upload_video(
+            local_file_path=file_path,
+            folder=folder
+        )
+        
+        if s3_url:
+            print(f"✅ {file_type.capitalize()} uploaded successfully: {s3_url}")
+            return s3_url
+        else:
+            print(f"❌ Failed to upload {file_type} to S3")
+            return None
+            
+    except Exception as e:
+        print(f"❌ Error uploading {file_type} to S3: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
 def test_image_generation():
     """Test image generation to see what's happening"""
     print("🔍 Testing Image Generation")
@@ -45,6 +84,11 @@ def test_image_generation():
             if os.path.exists(image_path):
                 file_size = os.path.getsize(image_path)
                 print(f"   File size: {file_size} bytes")
+            
+            # Upload to S3
+            s3_url = upload_to_s3(image_path, "image")
+            if s3_url:
+                print(f"   S3 URL: {s3_url}")
             
             return True
         else:
@@ -105,6 +149,11 @@ def test_video_generation():
             if os.path.exists(video_path):
                 file_size = os.path.getsize(video_path)
                 print(f"   File size: {file_size} bytes")
+            
+            # Upload to S3
+            s3_url = upload_to_s3(video_path, "video")
+            if s3_url:
+                print(f"   S3 URL: {s3_url}")
             
             return True
         else:
