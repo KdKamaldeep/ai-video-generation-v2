@@ -554,6 +554,7 @@ class StableDiffusionGenerator:
                     'fps': fps,
                     'noise_aug_strength': noise_aug_strength,  # Increased for more visible motion
                     'num_frames': num_frames,
+                    'num_inference_steps': 14 if fast_mode else 25,  # More steps for better quality
                 }
                 
                 if seed is not None:
@@ -790,9 +791,12 @@ class StableDiffusionGenerator:
             for frame in video_frames:
                 if hasattr(frame, 'size'):  # PIL Image object
                     import numpy as np
-                    processed_frames.append(np.array(frame))
+                    frame_array = np.array(frame)
+                    # Apply color correction to PIL-converted frames too
+                    frame_array = self._correct_video_frame_colors(frame_array)
+                    processed_frames.append(frame_array)
                 else:  # Already numpy array
-                    # Only apply minimal color correction if needed
+                    # Apply comprehensive color correction
                     frame = self._correct_video_frame_colors(frame)
                     processed_frames.append(frame)
             
@@ -807,27 +811,62 @@ class StableDiffusionGenerator:
             return None
     
     def _preprocess_image_for_video(self, image):
-        """Preprocess image to improve video generation quality"""
+        """Preprocess image to improve video generation quality and reduce artifacts"""
         try:
             import numpy as np
+            from PIL import Image, ImageEnhance
             
             # Convert to numpy array for processing
             img_array = np.array(image)
             
-            # Only ensure proper color range if needed
+            # Ensure proper color range
             if img_array.max() > 255:
                 img_array = img_array / 255.0 * 255
                 img_array = img_array.astype(np.uint8)
             
+            # Apply gentle color correction to reduce SVD artifacts
+            # Normalize brightness to prevent extreme values
+            mean_brightness = img_array.mean()
+            if mean_brightness > 180:  # Too bright
+                img_array = np.clip(img_array * 0.9, 0, 255).astype(np.uint8)
+            elif mean_brightness < 50:  # Too dark
+                img_array = np.clip(img_array * 1.1, 0, 255).astype(np.uint8)
+            
+            # Balance color channels to prevent SVD color artifacts
+            if len(img_array.shape) == 3:
+                r_mean = img_array[:, :, 0].mean()
+                g_mean = img_array[:, :, 1].mean()
+                b_mean = img_array[:, :, 2].mean()
+                
+                # If one channel is significantly different, balance it
+                max_channel = max(r_mean, g_mean, b_mean)
+                min_channel = min(r_mean, g_mean, b_mean)
+                
+                if max_channel - min_channel > 20:  # Significant imbalance
+                    target_mean = (r_mean + g_mean + b_mean) / 3
+                    if r_mean > 0:
+                        img_array[:, :, 0] = np.clip(img_array[:, :, 0] * (target_mean / r_mean), 0, 255).astype(np.uint8)
+                    if g_mean > 0:
+                        img_array[:, :, 1] = np.clip(img_array[:, :, 1] * (target_mean / g_mean), 0, 255).astype(np.uint8)
+                    if b_mean > 0:
+                        img_array[:, :, 2] = np.clip(img_array[:, :, 2] * (target_mean / b_mean), 0, 255).astype(np.uint8)
+            
             # Convert back to PIL Image
-            from PIL import Image
-            return Image.fromarray(img_array)
+            processed_image = Image.fromarray(img_array)
+            
+            # Apply gentle sharpening to improve SVD quality
+            from PIL import ImageEnhance
+            sharpener = ImageEnhance.Sharpness(processed_image)
+            processed_image = sharpener.enhance(1.1)  # Slight sharpening
+            
+            return processed_image
             
         except Exception as e:
             logger.warning(f"Image preprocessing failed: {e}")
             return image
     
     def _correct_video_frame_colors(self, frame):
+        """Correct color issues in video frames with comprehensive SVD artifact removal"""
         try:
             import numpy as np
             import logging
@@ -846,10 +885,66 @@ class StableDiffusionGenerator:
             if frame.ndim == 3 and frame.shape[2] > 3:
                 frame = frame[:, :, :3]
 
-            logger.debug(f"Corrected frame dtype: {frame.dtype}, max: {frame.max()}, min: {frame.min()}")
-            return frame
-        except Exception as e:
-            logger.warning(f"Color correction failed: {e}")
+            # Apply comprehensive SVD color correction
+            frame_mean = frame.mean()
+            frame_std = frame.std()
+            
+            # Fix brightness issues (common SVD problem)
+            if frame_mean > 180:  # Too bright
+                logger.debug(f"Frame too bright (mean: {frame_mean:.1f}), reducing brightness")
+                # Reduce brightness while preserving contrast
+                frame = np.clip(frame * 0.8, 0, 255).astype(np.uint8)
+            elif frame_mean < 40:  # Too dark
+                logger.debug(f"Frame too dark (mean: {frame_mean:.1f}), increasing brightness")
+                # Increase brightness while preserving contrast
+                frame = np.clip(frame * 1.4, 0, 255).astype(np.uint8)
+            
+            # Fix color channel imbalance (very common SVD issue)
+            if len(frame.shape) == 3:  # Color image
+                r_mean = frame[:, :, 0].mean()
+                g_mean = frame[:, :, 1].mean()
+                b_mean = frame[:, :, 2].mean()
+                
+                # Calculate color balance
+                max_channel = max(r_mean, g_mean, b_mean)
+                min_channel = min(r_mean, g_mean, b_mean)
+                
+                if max_channel - min_channel > 25:  # Significant imbalance
+                    logger.debug(f"Color imbalance detected (R:{r_mean:.1f}, G:{g_mean:.1f}, B:{b_mean:.1f}), balancing")
+                    # Balance colors by adjusting each channel
+                    target_mean = (r_mean + g_mean + b_mean) / 3
+                    if r_mean > 0:
+                        frame[:, :, 0] = np.clip(frame[:, :, 0] * (target_mean / r_mean), 0, 255).astype(np.uint8)
+                    if g_mean > 0:
+                        frame[:, :, 1] = np.clip(frame[:, :, 1] * (target_mean / g_mean), 0, 255).astype(np.uint8)
+                    if b_mean > 0:
+                        frame[:, :, 2] = np.clip(frame[:, :, 2] * (target_mean / b_mean), 0, 255).astype(np.uint8)
+            
+            # Fix contrast issues (SVD often produces flat images)
+            if frame_std < 25:  # Low contrast
+                logger.debug(f"Low contrast detected (std: {frame_std:.1f}), enhancing")
+                # Enhance contrast using histogram stretching
+                p5 = np.percentile(frame, 5)
+                p95 = np.percentile(frame, 95)
+                if p95 > p5:
+                    frame = np.clip((frame - p5) * 255 / (p95 - p5), 0, 255).astype(np.uint8)
+            
+            # Fix saturation issues (SVD can produce oversaturated colors)
+            if len(frame.shape) == 3:
+                # Convert to HSV to adjust saturation
+                import cv2
+                hsv = cv2.cvtColor(frame, cv2.COLOR_RGB2HSV)
+                saturation = hsv[:, :, 1]
+                
+                if saturation.mean() > 150:  # Too saturated
+                    logger.debug(f"Oversaturated image detected, reducing saturation")
+                    hsv[:, :, 1] = np.clip(saturation * 0.7, 0, 255).astype(np.uint8)
+                    frame = cv2.cvtColor(hsv, cv2.COLOR_HSV2RGB)
+            
+            # Final safety check
+            frame = np.clip(frame, 0, 255).astype(np.uint8)
+            
+            logger.debug(f"Corrected frame - dtype: {frame.dtype}, max: {frame.max()}, min: {frame.min()}, mean: {frame.mean():.1f}")
             return frame
             
         except Exception as e:
