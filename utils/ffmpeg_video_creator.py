@@ -750,11 +750,12 @@ class FFmpegVideoCreator:
         narration_lines: List[dict], 
         image_paths: List[str], 
         output_path: str,
-        motion_strength: float = 0.8,
+        motion_strength: float = 1.0,  # Increased from 0.8 to 1.0 for more visible motion
         num_frames_per_segment: int = 12,  # Reduced for faster generation
         video_fps: int = 8,
         fast_mode: bool = True,  # Enable fast mode by default
-        timeout_seconds: int = 60  # Timeout for each motion video generation
+        timeout_seconds: int = 60,  # Timeout for each motion video generation
+        motion_type: str = "dynamic"  # Type of motion to generate
     ) -> str:
         """
         Create a video with audio, motion videos generated from images, and subtitles
@@ -764,17 +765,18 @@ class FFmpegVideoCreator:
             narration_lines: List of narration line dictionaries
             image_paths: List of image paths to convert to motion videos
             output_path: Output video path
-            motion_strength: Strength of motion in stable video diffusion
+            motion_strength: Strength of motion in stable video diffusion (increased for more visible motion)
             num_frames_per_segment: Number of frames per video segment (reduced for speed)
             video_fps: FPS for generated motion videos
             fast_mode: Use fast mode for quicker generation
             timeout_seconds: Timeout for each motion video generation
+            motion_type: Type of motion to generate ("dynamic", "camera_movement", "object_motion", etc.)
             
         Returns:
             Path to the created video
         """
         logger.info(f"Creating video with motion from {len(image_paths)} images and {len(narration_lines)} narration lines")
-        logger.info(f"Fast mode: {fast_mode}, Timeout: {timeout_seconds}s per segment")
+        logger.info(f"Enhanced motion settings: strength={motion_strength}, type={motion_type}, fast_mode={fast_mode}, timeout={timeout_seconds}s per segment")
         
         if not self.sd_generator:
             logger.warning("Stable diffusion generator not available, falling back to static images")
@@ -807,15 +809,17 @@ class FFmpegVideoCreator:
                     signal.signal(signal.SIGALRM, timeout_handler)
                     signal.alarm(timeout_seconds)
                     
-                    # Generate motion video from the image
+                    # Generate motion video from the image with enhanced motion settings
                     video_path = self.sd_generator.generate_video_from_image(
                         image_path=image_path,
-                        motion_strength=motion_strength,
+                        motion_strength=motion_strength,  # Enhanced motion strength
                         num_frames=num_frames_per_segment,
                         fps=video_fps,
                         seed=i * 1000,
                         target_duration=target_duration,
-                        fast_mode=fast_mode
+                        fast_mode=fast_mode,
+                        motion_type=motion_type,  # Use dynamic motion type
+                        noise_aug_strength=0.3  # Increased for more visible motion
                     )
                     
                     # Cancel timeout

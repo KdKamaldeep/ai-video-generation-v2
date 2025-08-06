@@ -407,31 +407,61 @@ class StableDiffusionGenerator:
         thumbnail_prompt = f"YouTube thumbnail: {title}. Eye-catching, clickable thumbnail design, bold text, high contrast"
         return self.generate_image_from_text(thumbnail_prompt, style)
     
+    def get_dynamic_motion_bucket_id(self, motion_type: str = "random") -> int:
+        """
+        Get a dynamic motion bucket ID based on the desired motion type
+        
+        Args:
+            motion_type: Type of motion desired ("random", "camera_movement", "object_motion", "zoom", "pan")
+            
+        Returns:
+            Motion bucket ID for the specified motion type
+        """
+        # Motion bucket ID mapping for different motion types
+        motion_buckets = {
+            "random": [127, 200, 300, 400, 500],  # Random selection from dynamic buckets
+            "camera_movement": [200, 300, 400],    # Camera movement effects
+            "object_motion": [127, 200, 300],      # Object motion effects
+            "zoom": [200, 300],                    # Zoom effects
+            "pan": [127, 200],                     # Pan effects
+            "dynamic": [200, 300, 400, 500],       # Most dynamic motion
+            "subtle": [127, 150, 175],             # Subtle motion
+        }
+        
+        if motion_type in motion_buckets:
+            import random
+            return random.choice(motion_buckets[motion_type])
+        else:
+            # Default to dynamic motion
+            return 200
+    
     def generate_video_from_image(
         self,
         image_path: str,
-        motion_strength: float = 0.8,
+        motion_strength: float = 1.0,  # Increased from 0.8 to 1.0 for more visible motion
         num_frames: int = 15,  # Reduced from 25 to 15 for faster generation
         fps: int = 8,
         seed: Optional[int] = None,
-        motion_bucket_id: int = 127,
-        noise_aug_strength: float = 0.1,
+        motion_bucket_id: int = None,  # Allow dynamic selection
+        noise_aug_strength: float = 0.3,  # Increased from 0.1 to 0.3 for more visible motion
         target_duration: Optional[float] = None,  # Add target duration parameter
-        fast_mode: bool = True  # Add fast mode for quicker generation
+        fast_mode: bool = True,  # Add fast mode for quicker generation
+        motion_type: str = "dynamic"  # Type of motion to generate
     ) -> Optional[str]:
         """
         Generate a motion video from a single image using Stable Video Diffusion
         
         Args:
             image_path: Path to the input image
-            motion_strength: Strength of motion (0.0 to 1.0)
+            motion_strength: Strength of motion (0.0 to 1.0) - increased for more visible motion
             num_frames: Number of frames to generate (overridden by target_duration if provided)
             fps: Frames per second for the output video
             seed: Random seed for reproducibility
-            motion_bucket_id: Motion bucket ID for different motion types
-            noise_aug_strength: Noise augmentation strength
+            motion_bucket_id: Motion bucket ID for different motion types (if None, will be selected dynamically)
+            noise_aug_strength: Noise augmentation strength (increased for more visible motion)
             target_duration: Target duration in seconds (overrides num_frames if provided)
             fast_mode: Use faster settings for quicker generation
+            motion_type: Type of motion to generate ("dynamic", "camera_movement", "object_motion", etc.)
             
         Returns:
             Local path to the generated video, or None if failed
@@ -442,6 +472,12 @@ class StableDiffusionGenerator:
         
         try:
             logger.info(f"Generating video from image: {image_path}")
+            
+            # Select motion bucket ID dynamically if not provided
+            if motion_bucket_id is None:
+                motion_bucket_id = self.get_dynamic_motion_bucket_id(motion_type)
+            
+            logger.info(f"Motion settings: strength={motion_strength}, bucket_id={motion_bucket_id}, noise_aug={noise_aug_strength}, type={motion_type}")
             
             # Calculate exact number of frames if target duration is provided
             if target_duration is not None:
@@ -490,12 +526,12 @@ class StableDiffusionGenerator:
             signal.alarm(60)
             
             try:
-                # Generate video frames with optimized settings
+                # Generate video frames with enhanced motion settings
                 pipeline_kwargs = {
                     'decode_chunk_size': 4 if fast_mode else 8,  # Smaller chunks for faster processing
-                    'motion_bucket_id': motion_bucket_id,
+                    'motion_bucket_id': motion_bucket_id,  # More dynamic motion
                     'fps': fps,
-                    'noise_aug_strength': noise_aug_strength,
+                    'noise_aug_strength': noise_aug_strength,  # Increased for more visible motion
                     'num_frames': num_frames,
                 }
                 
