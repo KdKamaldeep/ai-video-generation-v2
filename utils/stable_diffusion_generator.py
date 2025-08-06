@@ -485,10 +485,16 @@ class StableDiffusionGenerator:
         
         try:
             logger.info(f"Generating video from image: {image_path}")
+            logger.info(f"Video pipeline loaded: {self.video_pipeline is not None}")
             
             # Check if image file exists
             if not os.path.exists(image_path):
                 logger.error(f"Image file does not exist: {image_path}")
+                return None
+            
+            # Check if it's actually an image file
+            if not image_path.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.tiff')):
+                logger.error(f"File is not an image: {image_path}")
                 return None
             
             # Select motion bucket ID dynamically if not provided
@@ -560,7 +566,14 @@ class StableDiffusionGenerator:
                     pipeline_kwargs['generator'] = torch.Generator(device=self.device).manual_seed(seed)
                 
                 logger.info(f"Calling video pipeline with kwargs: {pipeline_kwargs}")
-                video_frames = self.video_pipeline(image, **pipeline_kwargs).frames[0]
+                logger.info(f"Image size before pipeline: {image.size}")
+                
+                try:
+                    video_frames = self.video_pipeline(image, **pipeline_kwargs).frames[0]
+                    logger.info(f"Video pipeline call successful")
+                except Exception as pipeline_error:
+                    logger.error(f"Video pipeline call failed: {pipeline_error}")
+                    return None
                 
                 # Cancel timeout
                 signal.alarm(0)
@@ -900,6 +913,9 @@ class StableDiffusionGenerator:
                 
                 # Generate video from this image
                 logger.info(f"Generating video from image: {image_path}")
+                logger.info(f"Image file exists: {os.path.exists(image_path)}")
+                logger.info(f"Image file type: {os.path.splitext(image_path)[1]}")
+                
                 video_path = self.generate_video_from_image(
                     image_path=image_path,
                     motion_strength=motion_strength,
@@ -909,6 +925,11 @@ class StableDiffusionGenerator:
                 )
                 
                 logger.info(f"Video generation result: {video_path}")
+                if video_path:
+                    logger.info(f"Video file exists: {os.path.exists(video_path)}")
+                    logger.info(f"Video file type: {os.path.splitext(video_path)[1]}")
+                else:
+                    logger.error("Video generation returned None")
                 
                 if video_path is None:
                     logger.error(f"Video generation failed for image: {image_path}")
