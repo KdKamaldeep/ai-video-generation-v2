@@ -124,24 +124,43 @@ class StableDiffusionGenerator:
         try:
             logger.info(f"Loading Stable Video Diffusion pipeline on {self.device}...")
             
-            # Load stable video diffusion pipeline
-            self.video_pipeline = StableVideoDiffusionPipeline.from_pretrained(
+            # Try different models for better motion generation
+            model_options = [
                 "stabilityai/stable-video-diffusion-img2vid-xt",
-                torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
-                variant="fp16" if self.device == "cuda" else None
-            )
+                "stabilityai/stable-video-diffusion-img2vid",
+                "stabilityai/stable-video-diffusion-img2vid-xt-1-1"
+            ]
             
-            # Move to device
-            self.video_pipeline = self.video_pipeline.to(self.device)
+            for model_id in model_options:
+                try:
+                    logger.info(f"Trying model: {model_id}")
+                    
+                    # Load stable video diffusion pipeline
+                    self.video_pipeline = StableVideoDiffusionPipeline.from_pretrained(
+                        model_id,
+                        torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
+                        variant="fp16" if self.device == "cuda" else None
+                    )
+                    
+                    # Move to device
+                    self.video_pipeline = self.video_pipeline.to(self.device)
+                    
+                    # Enable memory optimizations
+                    if hasattr(self.video_pipeline, "enable_attention_slicing"):
+                        self.video_pipeline.enable_attention_slicing()
+                    
+                    if hasattr(self.video_pipeline, "enable_vae_slicing"):
+                        self.video_pipeline.enable_vae_slicing()
+                    
+                    logger.info(f"Video pipeline loaded successfully with model: {model_id}")
+                    break
+                    
+                except Exception as e:
+                    logger.warning(f"Failed to load model {model_id}: {e}")
+                    continue
             
-            # Enable memory optimizations
-            if hasattr(self.video_pipeline, "enable_attention_slicing"):
-                self.video_pipeline.enable_attention_slicing()
-            
-            if hasattr(self.video_pipeline, "enable_vae_slicing"):
-                self.video_pipeline.enable_vae_slicing()
-            
-            logger.info("Video pipeline loaded successfully")
+            if self.video_pipeline is None:
+                logger.error("Failed to load any video pipeline model")
             
         except Exception as e:
             logger.error(f"Error loading video pipeline: {e}")
@@ -538,12 +557,27 @@ class StableDiffusionGenerator:
                 if seed is not None:
                     pipeline_kwargs['generator'] = torch.Generator(device=self.device).manual_seed(seed)
                 
+                logger.info(f"Calling video pipeline with kwargs: {pipeline_kwargs}")
                 video_frames = self.video_pipeline(image, **pipeline_kwargs).frames[0]
                 
                 # Cancel timeout
                 signal.alarm(0)
                 
-                logger.info(f"Generated {len(video_frames)} video frames in fast mode")
+                logger.info(f"Generated {len(video_frames)} video frames")
+                logger.info(f"Frame shape: {video_frames[0].shape if video_frames else 'No frames'}")
+                
+                # Check if frames actually have motion
+                if len(video_frames) > 1:
+                    # Compare first and last frame to see if there's motion
+                    first_frame = video_frames[0]
+                    last_frame = video_frames[-1]
+                    motion_detected = not np.array_equal(first_frame, last_frame)
+                    logger.info(f"Motion detected: {motion_detected}")
+                    
+                    if not motion_detected:
+                        logger.warning("No motion detected in generated frames - frames are identical!")
+                else:
+                    logger.warning("Only one frame generated - no motion possible")
                 
             except TimeoutError:
                 logger.error("Video generation timed out after 60 seconds")
