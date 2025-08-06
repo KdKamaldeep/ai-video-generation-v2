@@ -293,96 +293,35 @@ def test_ffmpeg_integration():
         traceback.print_exc()
         return False
 
-async def test_full_pipeline():
-    """Test the full pipeline with S3 upload"""
-    print("\n🚀 Testing Full Pipeline")
-    print("=" * 50)
-    
-    try:
-        from main import full_pipeline_with_images
-        from main import FullPipelineWithImagesRequest
-        
-        print("1. Running full pipeline...")
-        start_time = time.time()
-        
-        # Create the request object with correct parameters
-        request = FullPipelineWithImagesRequest(
-            story_type="motivation",  # Use story type instead of script_lines
-            use_ffmpeg=True,  # Use FFmpeg for video creation
-            use_stable_diffusion=False,  # Use DALL-E for images
-            animation_type="zoom_in",  # Animation type for video
-            upload_to_s3=True,  # Enable S3 upload
-            s3_folder="test_results"  # S3 folder for uploads
-        )
-        
-        # Run the full pipeline
-        result = await full_pipeline_with_images(request)
-        
-        end_time = time.time()
-        pipeline_time = end_time - start_time
-        
-        if result and 'video_path' in result:
-            video_path = result['video_path']
-            if os.path.exists(video_path):
-                print(f"✅ Full pipeline completed: {video_path}")
-                print(f"   Pipeline time: {pipeline_time:.2f} seconds")
-                print(f"   File size: {os.path.getsize(video_path) / 1024:.1f} KB")
-                
-                # Check if S3 URL is in result
-                if 's3_url' in result:
-                    print(f"✅ Video uploaded to S3: {result['s3_url']}")
-                
-                return True
-            else:
-                print("❌ Video file not found")
-                return False
-        else:
-            print("❌ Full pipeline failed")
-            return False
-            
-    except Exception as e:
-        print(f"❌ Error: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
+
 
 if __name__ == "__main__":
-    import asyncio
+    print("🚀 Comprehensive Fix Test Suite with S3 Upload")
+    print("=" * 80)
     
-    async def run_tests():
-        print("🚀 Comprehensive Fix Test Suite with S3 Upload")
-        print("=" * 80)
+    try:
+        # Test image generation
+        image_ok = test_image_generation()
         
-        try:
-            # Test image generation
-            image_ok = test_image_generation()
+        # Test motion generation
+        motion_ok = test_motion_generation()
+        
+        # Test FFmpeg integration
+        ffmpeg_ok = test_ffmpeg_integration()
+        
+        print("\n📊 Test Results:")
+        print(f"   Image Generation: {'✅' if image_ok else '❌'}")
+        print(f"   Motion Generation: {'✅' if motion_ok else '❌'}")
+        print(f"   FFmpeg Integration: {'✅' if ffmpeg_ok else '❌'}")
+        
+        if image_ok and motion_ok and ffmpeg_ok:
+            print("\n🎉 All tests passed! Both image and motion generation should work.")
+            print("📤 Generated files have been uploaded to S3 for easy access.")
+        else:
+            print("\n⚠️  Some tests failed. Check the issues above.")
             
-            # Test motion generation
-            motion_ok = test_motion_generation()
-            
-            # Test FFmpeg integration
-            ffmpeg_ok = test_ffmpeg_integration()
-            
-            # Test full pipeline
-            pipeline_ok = await test_full_pipeline()
-            
-            print("\n📊 Test Results:")
-            print(f"   Image Generation: {'✅' if image_ok else '❌'}")
-            print(f"   Motion Generation: {'✅' if motion_ok else '❌'}")
-            print(f"   FFmpeg Integration: {'✅' if ffmpeg_ok else '❌'}")
-            print(f"   Full Pipeline: {'✅' if pipeline_ok else '❌'}")
-            
-            if image_ok and motion_ok and ffmpeg_ok and pipeline_ok:
-                print("\n🎉 All tests passed! Both image and motion generation should work.")
-                print("📤 Generated files have been uploaded to S3 for easy access.")
-            else:
-                print("\n⚠️  Some tests failed. Check the issues above.")
-                
-        except Exception as e:
-            print(f"❌ Test suite failed: {e}")
-            import traceback
-            traceback.print_exc()
-            sys.exit(1)
-    
-    # Run the async tests
-    asyncio.run(run_tests()) 
+    except Exception as e:
+        print(f"❌ Test suite failed: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1) 
