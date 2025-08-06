@@ -1100,7 +1100,7 @@ class StableDiffusionGenerator:
                     logger.info(f"Generated {len(frames)} frames for image {i+1}")
                     
                     # Limit frames to target duration
-                    if len(frames) > target_frames_per_image:
+                    """ if len(frames) > target_frames_per_image:
                         frames = frames[:target_frames_per_image]
                         logger.info(f"Limited to {len(frames)} frames for target duration")
                     elif len(frames) < target_frames_per_image:
@@ -1108,7 +1108,7 @@ class StableDiffusionGenerator:
                         last_frame = frames[-1] if frames else None
                         while len(frames) < target_frames_per_image and last_frame is not None:
                             frames.append(last_frame.copy())
-                        logger.info(f"Extended to {len(frames)} frames for target duration")
+                        logger """.info(f"Extended to {len(frames)} frames for target duration")
                     
                     all_video_frames.extend(frames)
                     
