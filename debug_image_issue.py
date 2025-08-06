@@ -136,10 +136,10 @@ def test_video_generation():
         video_path = generator.generate_video_from_image(
             image_path=image_path,
             motion_strength=0.3,  # Very low motion
-            num_frames=8,  # Few frames
+            num_frames=10,  # More frames for better testing
             fps=8,
             motion_type="subtle",  # Subtle motion
-            fast_mode=True
+            fast_mode=False  # Use full quality mode for testing
         )
         generation_time = time.time() - start_time
         
@@ -153,6 +153,31 @@ def test_video_generation():
             if os.path.exists(video_path):
                 file_size = os.path.getsize(video_path)
                 print(f"   File size: {file_size} bytes")
+                
+                # Check video dimensions
+                try:
+                    import cv2
+                    cap = cv2.VideoCapture(video_path)
+                    if cap.isOpened():
+                        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                        fps_video = cap.get(cv2.CAP_PROP_FPS)
+                        frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+                        cap.release()
+                        
+                        print(f"   Video dimensions: {width}x{height}")
+                        print(f"   Video FPS: {fps_video}")
+                        print(f"   Frame count: {frame_count}")
+                        
+                        # Check if dimensions are reasonable
+                        if width < 400 or height < 300:
+                            print(f"   ⚠️  Warning: Video dimensions seem small ({width}x{height})")
+                        else:
+                            print(f"   ✅ Video dimensions look good")
+                    else:
+                        print(f"   ❌ Could not read video file")
+                except Exception as e:
+                    print(f"   ❌ Error checking video dimensions: {e}")
             
             # Upload to S3
             s3_url = upload_to_s3(video_path, "video")

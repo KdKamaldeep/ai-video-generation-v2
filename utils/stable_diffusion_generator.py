@@ -520,13 +520,8 @@ class StableDiffusionGenerator:
             
             # Optimize for speed if fast_mode is enabled
             if fast_mode:
-                # Reduce frames for faster generation
-                if num_frames > 12:
-                    num_frames = 12
-                    logger.info(f"Fast mode: Reduced frames to {num_frames} for quicker generation")
-                
-                # Use smaller image size for faster processing
-                target_size = (512, 288)  # Smaller size for faster generation
+                # Use larger image size for better video quality
+                target_size = (768, 432)  # Increased from (512, 288) for better quality
             else:
                 target_size = (1024, 576)  # Original size
             
@@ -546,10 +541,10 @@ class StableDiffusionGenerator:
             # Apply color preprocessing to improve video generation
             image = self._preprocess_image_for_video(image)
             
-            # Resize image for video generation
+            # Resize image for video generation - ensure it fills the frame properly
             image = image.resize(target_size, Image.Resampling.LANCZOS)
             
-            logger.info(f"Processing image with size: {image.size}")
+            logger.info(f"Processing image with size: {image.size} for video generation")
             
             # Add timeout protection
             import signal
@@ -571,6 +566,8 @@ class StableDiffusionGenerator:
                     'noise_aug_strength': 0.05,  # Very low noise to prevent artifacts
                     'num_frames': min(num_frames, 12),  # Limit frames for stability
                     'num_inference_steps': 20,  # More steps for better quality
+                    'height': image.size[1],  # Ensure output matches input height
+                    'width': image.size[0],   # Ensure output matches input width
                 }
                 
                 if seed is not None:
@@ -603,6 +600,26 @@ class StableDiffusionGenerator:
                     logger.info("Converting PIL Images to numpy arrays")
                     import numpy as np
                     video_frames = [np.array(frame) for frame in video_frames]
+                
+                # Log frame dimensions for debugging
+                if video_frames:
+                    first_frame = video_frames[0]
+                    logger.info(f"First frame shape: {first_frame.shape}")
+                    logger.info(f"Expected shape: {image.size[1]}x{image.size[0]}x3")
+                    
+                    # Check if dimensions match
+                    if len(first_frame.shape) == 3:
+                        frame_height, frame_width, channels = first_frame.shape
+                        expected_height, expected_width = image.size[1], image.size[0]
+                        
+                        if frame_height != expected_height or frame_width != expected_width:
+                            logger.warning(f"Frame dimensions mismatch: got {frame_width}x{frame_height}, expected {expected_width}x{expected_height}")
+                        else:
+                            logger.info("Frame dimensions match input image")
+                    else:
+                        logger.warning(f"Unexpected frame shape: {first_frame.shape}")
+                else:
+                    logger.warning("No frames generated")
                 
                 logger.info(f"Frame shape: {video_frames[0].shape if video_frames else 'No frames'}")
                 
@@ -830,7 +847,13 @@ class StableDiffusionGenerator:
                     frame = self._correct_video_frame_colors(frame)
                     processed_frames.append(frame)
             
-            # Convert frames to video
+            # Log frame dimensions for debugging
+            if processed_frames:
+                first_frame = processed_frames[0]
+                logger.info(f"Saving video with frame dimensions: {first_frame.shape}")
+                logger.info(f"Number of frames: {len(processed_frames)}")
+            
+            # Convert frames to video with proper dimensions
             export_to_video(processed_frames, output_path, fps=fps)
             
             logger.info(f"Video saved to: {output_path}")
@@ -845,6 +868,10 @@ class StableDiffusionGenerator:
         try:
             import numpy as np
             from PIL import Image, ImageEnhance
+            
+            # Log original image size
+            original_size = image.size
+            logger.info(f"Preprocessing image: original size = {original_size}")
             
             # Convert to numpy array for processing
             img_array = np.array(image)
@@ -888,6 +915,10 @@ class StableDiffusionGenerator:
             from PIL import ImageEnhance
             sharpener = ImageEnhance.Sharpness(processed_image)
             processed_image = sharpener.enhance(1.05)  # Very slight sharpening (reduced from 1.1)
+            
+            # Log final processed image size
+            final_size = processed_image.size
+            logger.info(f"Preprocessing complete: final size = {final_size}")
             
             return processed_image
             
