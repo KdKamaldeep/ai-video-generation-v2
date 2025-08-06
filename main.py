@@ -17,6 +17,7 @@ from utils.ffmpeg_video_creator import FFmpegVideoCreator
 from utils.youtube_uploader import YouTubeUploader
 from utils.image_generator import ImageGenerator
 from utils.stable_diffusion_generator import StableDiffusionGenerator
+from utils.animatediff_generator import AnimateDiffGenerator
 
 # Load environment variables
 load_dotenv()
@@ -91,6 +92,13 @@ except Exception as e:
     logger.error(f"Could not initialize StableDiffusionGenerator: {e}")
     stable_diffusion_generator = None
 
+try:
+    animatediff_generator = AnimateDiffGenerator()
+    logger.info("AnimateDiffGenerator initialized successfully")
+except Exception as e:
+    logger.error(f"Could not initialize AnimateDiffGenerator: {e}")
+    animatediff_generator = None
+
 # Pydantic models for API requests/responses
 class VoiceRequest(BaseModel):
     narration: List[str]
@@ -143,6 +151,37 @@ class S3UploadRequest(BaseModel):
     video_path: str
     s3_key: str = None
     folder: str = "youtube-shorts"
+
+class AnimateDiffRequest(BaseModel):
+    text: str
+    style: str = "realistic"
+    width: int = 512
+    height: int = 768
+    num_frames: int = 16
+    fps: int = 8
+    motion_strength: float = 0.8
+    num_inference_steps: int = 20
+    guidance_scale: float = 7.5
+    seed: Optional[int] = None
+
+class AnimateDiffMotionRequest(BaseModel):
+    image_path: str
+    motion_type: str = "subtle"
+    num_frames: int = 16
+    fps: int = 8
+    motion_strength: float = 0.8
+    num_inference_steps: int = 20
+    guidance_scale: float = 7.5
+    seed: Optional[int] = None
+
+class AnimateDiffScriptRequest(BaseModel):
+    script_lines: List[str]
+    style: str = "realistic"
+    motion_type: str = "subtle"
+    num_frames: int = 16
+    fps: int = 8
+    maintain_character_consistency: bool = True
+    character_description: str = None
 
 # Create necessary directories
 logger.info("Creating necessary directories...")
@@ -581,16 +620,143 @@ async def get_available_image_generators():
                     "description": "Open-source Stable Diffusion model for local image generation",
                     "model_id": "SG161222/Realistic_Vision_V5.1_noVAE",
                     "requires": "PyTorch, diffusers library"
+                },
+                "animatediff": {
+                    "name": "AnimateDiff",
+                    "enabled": animatediff_generator is not None,
+                    "description": "AnimateDiff for adding motion to static images or prompt-based generations",
+                    "model_id": "guoyww/animatediff",
+                    "requires": "PyTorch, diffusers[animatediff] library"
                 }
             },
             "default": "dalle",
             "usage": {
                 "generate_images": "Set use_stable_diffusion=true to use Stable Diffusion",
-                "full_pipeline": "Set use_stable_diffusion=true to use Stable Diffusion"
+                "full_pipeline": "Set use_stable_diffusion=true to use Stable Diffusion",
+                "animatediff": "Use /generate-animated-video or /add-motion-to-image endpoints"
             }
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get image generators: {str(e)}")
+
+@app.post("/generate-animated-video")
+async def generate_animated_video(request: AnimateDiffRequest):
+    """Generate an animated video directly from text using AnimateDiff"""
+    try:
+        if not animatediff_generator:
+            raise HTTPException(status_code=500, detail="AnimateDiff generator not available")
+        
+        logger.info(f"Generating animated video for: {request.text[:50]}...")
+        
+        video_path = animatediff_generator.generate_animated_video_from_text(
+            text=request.text,
+            style=request.style,
+            width=request.width,
+            height=request.height,
+            num_frames=request.num_frames,
+            fps=request.fps,
+            motion_strength=request.motion_strength,
+            num_inference_steps=request.num_inference_steps,
+            guidance_scale=request.guidance_scale,
+            seed=request.seed
+        )
+        
+        if video_path:
+            return {
+                "success": True,
+                "message": "Animated video generated successfully",
+                "video_path": video_path,
+                "filename": os.path.basename(video_path)
+            }
+        else:
+            raise HTTPException(status_code=500, detail="Failed to generate animated video")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error generating animated video: {e}")
+        raise HTTPException(status_code=500, detail=f"Error generating animated video: {str(e)}")
+
+@app.post("/add-motion-to-image")
+async def add_motion_to_image(request: AnimateDiffMotionRequest):
+    """Add motion to a static image using AnimateDiff"""
+    try:
+        if not animatediff_generator:
+            raise HTTPException(status_code=500, detail="AnimateDiff generator not available")
+        
+        if not os.path.exists(request.image_path):
+            raise HTTPException(status_code=404, detail=f"Image file not found: {request.image_path}")
+        
+        logger.info(f"Adding {request.motion_type} motion to image: {request.image_path}")
+        
+        video_path = animatediff_generator.add_motion_to_image(
+            image_path=request.image_path,
+            motion_type=request.motion_type,
+            num_frames=request.num_frames,
+            fps=request.fps,
+            motion_strength=request.motion_strength,
+            num_inference_steps=request.num_inference_steps,
+            guidance_scale=request.guidance_scale,
+            seed=request.seed
+        )
+        
+        if video_path:
+            return {
+                "success": True,
+                "message": f"Motion video generated successfully with {request.motion_type} motion",
+                "video_path": video_path,
+                "filename": os.path.basename(video_path),
+                "motion_type": request.motion_type
+            }
+        else:
+            raise HTTPException(status_code=500, detail="Failed to generate motion video")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error adding motion to image: {e}")
+        raise HTTPException(status_code=500, detail=f"Error adding motion to image: {str(e)}")
+
+@app.post("/generate-animated-script")
+async def generate_animated_script(request: AnimateDiffScriptRequest):
+    """Generate animated videos for each script line using AnimateDiff"""
+    try:
+        if not animatediff_generator:
+            raise HTTPException(status_code=500, detail="AnimateDiff generator not available")
+        
+        # Set up character consistency if requested
+        if request.maintain_character_consistency and request.character_description:
+            animatediff_generator.set_character_consistency(
+                character_description=request.character_description
+            )
+        
+        logger.info(f"Generating animated videos for {len(request.script_lines)} script lines...")
+        
+        video_paths = animatediff_generator.generate_motion_videos_for_script(
+            script_lines=request.script_lines,
+            style=request.style,
+            motion_type=request.motion_type,
+            num_frames=request.num_frames,
+            fps=request.fps,
+            maintain_character_consistency=request.maintain_character_consistency
+        )
+        
+        successful_videos = [path for path in video_paths if path]
+        
+        return {
+            "success": True,
+            "message": f"Generated {len(successful_videos)} animated videos",
+            "video_paths": successful_videos,
+            "filenames": [os.path.basename(path) for path in successful_videos],
+            "total_requested": len(request.script_lines),
+            "successful": len(successful_videos)
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error generating animated script: {e}")
+        raise HTTPException(status_code=500, detail=f"Error generating animated script: {str(e)}")
 
 @app.post("/upload-to-s3")
 async def upload_to_s3(request: S3UploadRequest):

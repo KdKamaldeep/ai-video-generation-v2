@@ -19,7 +19,7 @@ moviepy==1.0.3
 # Stable Diffusion dependencies
 torch>=2.0.0
 torchvision>=0.15.0
-diffusers>=0.24.0
+diffusers[animatediff]>=0.24.0
 transformers>=4.35.0
 accelerate>=0.24.0
 xformers>=0.0.22
