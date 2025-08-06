@@ -111,6 +111,10 @@ class FFmpegVideoCreator:
     ) -> str:
         """Create a motion video segment using stable video diffusion"""
         try:
+            # Get target duration from the line
+            target_duration = line.get("duration", 3.0)
+            logger.info(f"Creating motion video segment {index} with target duration: {target_duration}s")
+            
             # Generate image first
             image_path = self.sd_generator.generate_image_from_text(
                 text=line.get("visual_suggestion", line["text"]),
@@ -119,21 +123,19 @@ class FFmpegVideoCreator:
             )
             
             if image_path:
-                # Generate motion video from the image
-                video_path = self.sd_generator.generate_video_from_image(
-                    image_path=image_path,
+                # Generate motion video from the image with target duration
+                video_path = self.sd_generator.create_motion_video_from_image_sequence(
+                    image_paths=[image_path],
+                    output_path=os.path.join(temp_dir, f"motion_video_{index}.mp4"),
                     motion_strength=motion_strength,
-                    num_frames=num_frames,
+                    num_frames_per_image=num_frames,
                     fps=fps,
-                    seed=index * 1000
+                    target_duration_per_image=target_duration
                 )
                 
                 if video_path:
-                    # Copy to temp directory for processing
-                    temp_video_path = os.path.join(temp_dir, f"motion_video_{index}.mp4")
-                    import shutil
-                    shutil.copy2(video_path, temp_video_path)
-                    return temp_video_path
+                    logger.info(f"Motion video segment {index} created: {video_path}")
+                    return video_path
             
             # Fallback to static image if video generation fails
             logger.warning(f"Motion video generation failed for segment {index}, using static image")
@@ -610,26 +612,24 @@ class FFmpegVideoCreator:
                 
                 # Create video
                 logger.info(f"Creating simple video with background image")
-                (
-                    process = (
-                        ffmpeg
-                        .output(video, audio, output_path,
-                                vcodec='h264_nvenc',
-                                acodec='aac',
-                                pix_fmt='yuv420p',
-                                r=30,
-                                video_bitrate='4M',
-                                audio_bitrate='128k',
-                                shortest=None,
-                                **{'preset': 'fast'})
-                        .overwrite_output()
-                        .run_async(pipe_stderr=True)
-                    )
-
-                    # Print progress lines in real-time
-                    for line in process.stderr:
-                        logger.info(line.decode('utf-8').strip())
+                process = (
+                    ffmpeg
+                    .output(video, audio, output_path,
+                            vcodec='h264_nvenc',
+                            acodec='aac',
+                            pix_fmt='yuv420p',
+                            r=30,
+                            video_bitrate='4M',
+                            audio_bitrate='128k',
+                            shortest=None,
+                            **{'preset': 'fast'})
+                    .overwrite_output()
+                    .run_async(pipe_stderr=True)
                 )
+
+                # Print progress lines in real-time
+                for line in process.stderr:
+                    logger.info(line.decode('utf-8').strip())
                 
                 # Clean up
                 os.unlink(tmp_img.name)

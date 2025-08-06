@@ -647,7 +647,8 @@ class StableDiffusionGenerator:
         motion_strength: float = 0.8,
         num_frames_per_image: int = 15,
         fps: int = 8,
-        transition_frames: int = 5
+        transition_frames: int = 5,
+        target_duration_per_image: float = 3.0  # Add target duration parameter
     ) -> Optional[str]:
         """
         Create a motion video from a sequence of images with smooth transitions
@@ -659,6 +660,7 @@ class StableDiffusionGenerator:
             num_frames_per_image: Number of frames to generate per image
             fps: Frames per second
             transition_frames: Number of transition frames between images
+            target_duration_per_image: Target duration for each image in seconds
             
         Returns:
             Path to the generated video, or None if failed
@@ -669,6 +671,11 @@ class StableDiffusionGenerator:
         
         try:
             logger.info(f"Creating motion video from {len(image_paths)} images")
+            logger.info(f"Target duration per image: {target_duration_per_image}s, FPS: {fps}")
+            
+            # Calculate exact number of frames needed per image
+            target_frames_per_image = int(target_duration_per_image * fps)
+            logger.info(f"Target frames per image: {target_frames_per_image}")
             
             all_video_frames = []
             
@@ -696,6 +703,19 @@ class StableDiffusionGenerator:
                         frames.append(frame)
                     cap.release()
                     
+                    logger.info(f"Generated {len(frames)} frames for image {i+1}")
+                    
+                    # Limit frames to target duration
+                    if len(frames) > target_frames_per_image:
+                        frames = frames[:target_frames_per_image]
+                        logger.info(f"Limited to {len(frames)} frames for target duration")
+                    elif len(frames) < target_frames_per_image:
+                        # Repeat last frame to reach target duration
+                        last_frame = frames[-1] if frames else None
+                        while len(frames) < target_frames_per_image and last_frame is not None:
+                            frames.append(last_frame.copy())
+                        logger.info(f"Extended to {len(frames)} frames for target duration")
+                    
                     all_video_frames.extend(frames)
                     
                     # Add transition frames if not the last image
@@ -719,7 +739,9 @@ class StableDiffusionGenerator:
                 
                 out.release()
                 
+                total_duration = len(all_video_frames) / fps
                 logger.info(f"Motion video created: {output_path}")
+                logger.info(f"Total video duration: {total_duration:.2f} seconds ({len(all_video_frames)} frames at {fps} FPS)")
                 return output_path
             else:
                 logger.error("No video frames generated")
