@@ -623,6 +623,11 @@ class StableDiffusionGenerator:
             video_path = self._save_video(video_frames, image_path, seed, fps)
             
             if video_path and os.path.exists(video_path):
+                # Verify it's actually a video file
+                if not video_path.lower().endswith('.mp4'):
+                    logger.error(f"Generated file is not a video: {video_path}")
+                    return None
+                
                 actual_duration = len(video_frames) / fps
                 logger.info(f"Video generated and saved: {video_path}")
                 logger.info(f"Actual duration: {actual_duration:.2f} seconds")
@@ -894,6 +899,7 @@ class StableDiffusionGenerator:
                 logger.info(f"Processing image {i+1}/{len(image_paths)}: {image_path}")
                 
                 # Generate video from this image
+                logger.info(f"Generating video from image: {image_path}")
                 video_path = self.generate_video_from_image(
                     image_path=image_path,
                     motion_strength=motion_strength,
@@ -902,10 +908,29 @@ class StableDiffusionGenerator:
                     seed=i * 1000  # Use different seed for each image
                 )
                 
+                logger.info(f"Video generation result: {video_path}")
+                
+                if video_path is None:
+                    logger.error(f"Video generation failed for image: {image_path}")
+                    continue
+                
                 if video_path and os.path.exists(video_path):
+                    # Check if the file is actually a video file
+                    if not video_path.lower().endswith(('.mp4', '.avi', '.mov', '.mkv')):
+                        logger.error(f"Generated file is not a video: {video_path}")
+                        logger.error(f"Skipping this image as video generation failed")
+                        continue
+                    
                     # Load the generated video frames
                     import cv2
                     cap = cv2.VideoCapture(video_path)
+                    
+                    # Check if video opened successfully
+                    if not cap.isOpened():
+                        logger.error(f"Failed to open video file: {video_path}")
+                        cap.release()
+                        continue
+                    
                     frames = []
                     while True:
                         ret, frame = cap.read()
@@ -913,6 +938,8 @@ class StableDiffusionGenerator:
                             break
                         frames.append(frame)
                     cap.release()
+                    
+                    logger.info(f"Successfully loaded {len(frames)} frames from video: {video_path}")
                     
                     logger.info(f"Generated {len(frames)} frames for image {i+1}")
                     
