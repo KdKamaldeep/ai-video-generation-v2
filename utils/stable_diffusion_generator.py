@@ -356,14 +356,14 @@ class StableDiffusionGenerator:
     def _create_enhanced_prompt(self, text: str, style: str) -> str:
         """Create an enhanced prompt for better image generation"""
         style_prompts = {
-            "realistic": "high quality, realistic, detailed, professional photography, sharp focus",
-            "cinematic": "cinematic lighting, movie still, dramatic, professional cinematography",
-            "artistic": "artistic, creative, beautiful composition, masterful lighting",
-            "cartoon": "cartoon style, animated, colorful, fun, vibrant",
-            "minimalist": "minimalist, clean, simple, modern design, elegant",
-            "dramatic": "dramatic lighting, moody, atmospheric, intense",
-            "funny": "humorous, comedic, lighthearted, playful, entertaining",
-            "relatable": "everyday life, relatable, authentic, candid, natural"
+            "realistic": "high quality, realistic, detailed, professional photography",
+            "cinematic": "cinematic lighting, dramatic, professional cinematography",
+            "artistic": "artistic, creative, beautiful composition",
+            "cartoon": "cartoon style, animated, colorful, fun",
+            "minimalist": "minimalist, clean, simple, modern",
+            "dramatic": "dramatic lighting, moody, atmospheric",
+            "funny": "humorous, comedic, lighthearted, playful",
+            "relatable": "everyday life, relatable, authentic, natural"
         }
         
         style_desc = style_prompts.get(style, style_prompts["realistic"])
@@ -376,21 +376,15 @@ class StableDiffusionGenerator:
         if self.character_style:
             character_enhancement = f", {self.character_style['prompt_enhancement']}"
         
-        enhanced_prompt = (
-            f"{clean_text}. "
-            f"Style: {style_desc}. "
-            f"High resolution, well-lit, clear composition, centered subject, "
-            f"9:16 aspect ratio, professional quality{character_enhancement}"
-        )
+        # Simplified enhanced prompt
+        enhanced_prompt = f"{clean_text}, {style_desc}, high quality{character_enhancement}"
         
         return enhanced_prompt
     
     def _get_default_negative_prompt(self) -> str:
         """Get default negative prompt to avoid common issues"""
         return (
-            "blurry, low quality, distorted, deformed, ugly, bad anatomy, "
-            "watermark, signature, text, logo, multiple people, crowd, "
-            "out of frame, poorly drawn, sketch, amateur, pixelated"
+            "blurry, low quality, distorted, watermark, signature, text, logo"
         )
     
     def _save_image(self, image: Image.Image, text: str, seed: Optional[int] = None) -> Optional[str]:
@@ -578,13 +572,24 @@ class StableDiffusionGenerator:
                     # Compare first and last frame to see if there's motion
                     first_frame = video_frames[0]
                     last_frame = video_frames[-1]
-                    motion_detected = not np.array_equal(first_frame, last_frame)
+                    
+                    # Calculate motion score using mean absolute difference
+                    import numpy as np
+                    diff = np.abs(first_frame.astype(np.float32) - last_frame.astype(np.float32))
+                    motion_score = np.mean(diff)
+                    
+                    logger.info(f"Motion score: {motion_score:.2f}")
+                    motion_detected = motion_score > 2.0  # Lower threshold for more sensitive detection
                     logger.info(f"Motion detected: {motion_detected}")
                     
                     if not motion_detected:
-                        logger.warning("No motion detected in generated frames - frames are identical!")
+                        logger.warning(f"No motion detected in generated frames - motion score too low: {motion_score:.2f}")
+                        # Try with different motion settings
+                        logger.info("Attempting to regenerate with different motion settings...")
+                        return self._regenerate_with_different_motion(image, image_path, seed, fps, target_duration)
                 else:
                     logger.warning("Only one frame generated - no motion possible")
+                    return None
                 
             except TimeoutError:
                 logger.error("Video generation timed out after 60 seconds")
@@ -896,6 +901,60 @@ class StableDiffusionGenerator:
         except Exception as e:
             logger.error(f"Error creating motion video: {e}")
             return None
+    
+    def _regenerate_with_different_motion(self, image, image_path: str, seed: Optional[int], fps: int, target_duration: Optional[float]) -> Optional[str]:
+        """Regenerate video with different motion settings for better motion"""
+        logger.info("Regenerating video with enhanced motion settings...")
+        
+        # Try different motion bucket IDs for better motion
+        motion_bucket_ids = [127, 200, 300, 400, 500]
+        
+        for bucket_id in motion_bucket_ids:
+            try:
+                logger.info(f"Trying motion bucket ID: {bucket_id}")
+                
+                pipeline_kwargs = {
+                    'decode_chunk_size': 4,
+                    'motion_bucket_id': bucket_id,
+                    'fps': fps,
+                    'noise_aug_strength': 0.5,  # Higher noise for more motion
+                    'num_frames': 12,
+                }
+                
+                if seed is not None:
+                    pipeline_kwargs['generator'] = torch.Generator(device=self.device).manual_seed(seed + bucket_id)
+                
+                video_frames = self.video_pipeline(image, **pipeline_kwargs).frames[0]
+                
+                # Convert PIL Images to numpy arrays if needed
+                if video_frames and hasattr(video_frames[0], 'size'):
+                    import numpy as np
+                    video_frames = [np.array(frame) for frame in video_frames]
+                
+                # Check motion
+                if len(video_frames) > 1:
+                    first_frame = video_frames[0]
+                    last_frame = video_frames[-1]
+                    diff = np.abs(first_frame.astype(np.float32) - last_frame.astype(np.float32))
+                    motion_score = np.mean(diff)
+                    
+                    logger.info(f"Motion score with bucket {bucket_id}: {motion_score:.2f}")
+                    
+                    if motion_score > 5.0:  # Good motion detected
+                        logger.info(f"Good motion detected with bucket {bucket_id}")
+                        
+                        # Save video
+                        video_path = self._save_video(video_frames, image_path, seed, fps)
+                        if video_path:
+                            logger.info(f"Video regenerated successfully: {video_path}")
+                            return video_path
+                
+            except Exception as e:
+                logger.warning(f"Failed with bucket {bucket_id}: {e}")
+                continue
+        
+        logger.error("Failed to generate motion video with any bucket ID")
+        return None
     
     def cleanup(self):
         """Clean up resources"""
