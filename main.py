@@ -16,6 +16,7 @@ from utils.shotstack_video_creator import ShotstackVideoCreator
 from utils.ffmpeg_video_creator import FFmpegVideoCreator
 from utils.youtube_uploader import YouTubeUploader
 from utils.image_generator import ImageGenerator
+from utils.stable_diffusion_generator import StableDiffusionGenerator
 
 # Load environment variables
 load_dotenv()
@@ -83,6 +84,13 @@ except Exception as e:
     logger.error(f"Could not initialize ImageGenerator: {e}")
     image_generator = None
 
+try:
+    stable_diffusion_generator = StableDiffusionGenerator()
+    logger.info("StableDiffusionGenerator initialized successfully")
+except Exception as e:
+    logger.error(f"Could not initialize StableDiffusionGenerator: {e}")
+    stable_diffusion_generator = None
+
 # Pydantic models for API requests/responses
 class VoiceRequest(BaseModel):
     narration: List[str]
@@ -105,10 +113,12 @@ class ImageVideoRequest(BaseModel):
 class GenerateImagesRequest(BaseModel):
     script_lines: List[str]
     style: str = "realistic"
+    use_stable_diffusion: bool = False
 
 class FullPipelineWithImagesRequest(BaseModel):
     use_ffmpeg: bool = False
     animation_type: str = "zoom_in"
+    use_stable_diffusion: bool = False
     # Optional script data from generate-script response
     script_title: str = None
     script_narration: List[dict] = None
@@ -144,6 +154,7 @@ async def root():
             "generate_script": "/generate-script",
             "generate_script_with_retry": "/generate-script-with-retry",
             "available_story_types": "/available-story-types",
+            "available_image_generators": "/available-image-generators",
             "generate_voice": "/generate-voice",
             "create_video": "/create-video",
             "upload_to_youtube": "/upload-to-youtube",
@@ -165,9 +176,11 @@ async def root():
                 ]
             },
             "image_generation": {
-                "enabled": image_generator is not None,
-                "model": "DALL-E 3",
-                "description": "AI-powered image generation using DALL-E 3, saved locally in output/images folder"
+                "dalle_enabled": image_generator is not None,
+                "stable_diffusion_enabled": stable_diffusion_generator is not None,
+                "dalle_model": "DALL-E 3",
+                "stable_diffusion_model": "SG161222/Realistic_Vision_V5.1_noVAE",
+                "description": "AI-powered image generation using DALL-E 3 or Stable Diffusion, saved locally in output/images folder"
             },
             "video_creation": {
                 "ffmpeg_support": ffmpeg_video_creator is not None,
@@ -191,7 +204,8 @@ async def root():
                 "body": {
                     "story_type": "comedy",
                     "use_ffmpeg": True,
-                    "animation_type": "zoom_in"
+                    "animation_type": "zoom_in",
+                    "use_stable_diffusion": False
                 }
             },
             "full_pipeline_with_existing_script": {
@@ -202,6 +216,15 @@ async def root():
                     "script_title": "Your Script Title",
                     "script_narration": [{"text": "Your text", "duration": 3.0, "start": 0.0}],
                     "script_tags": ["tag1", "tag2"]
+                }
+            },
+            "generate_images_with_stable_diffusion": {
+                "method": "POST",
+                "endpoint": "/generate-images",
+                "body": {
+                    "script_lines": ["A person looking confused", "Someone scratching their head"],
+                    "style": "realistic",
+                    "use_stable_diffusion": True
                 }
             }
         }
@@ -323,38 +346,50 @@ async def generate_voice(request: VoiceRequest):
 
 @app.post("/generate-images")
 async def generate_images(request: GenerateImagesRequest):
-    """Generate images using DALL-E and save locally"""
+    """Generate images using DALL-E or Stable Diffusion and save locally"""
     logger.info(f"Image generation requested for {len(request.script_lines)} lines with style: {request.style}")
+    logger.info(f"Using {'Stable Diffusion' if request.use_stable_diffusion else 'DALL-E'} for image generation")
     
-    if image_generator is None:
-        logger.error("Image generator not available")
-        raise HTTPException(status_code=503, detail="Image generator not available. Check OPENAI_API_KEY configuration.")
+    # Choose image generator based on switch
+    if request.use_stable_diffusion:
+        if stable_diffusion_generator is None:
+            logger.error("Stable Diffusion generator not available")
+            raise HTTPException(status_code=503, detail="Stable Diffusion generator not available. Check model configuration.")
+        generator = stable_diffusion_generator
+        generator_name = "Stable Diffusion"
+    else:
+        if image_generator is None:
+            logger.error("DALL-E image generator not available")
+            raise HTTPException(status_code=503, detail="DALL-E image generator not available. Check OPENAI_API_KEY configuration.")
+        generator = image_generator
+        generator_name = "DALL-E"
     
     try:
-        logger.info(f"Generating images using DALL-E...")
+        logger.info(f"Generating images using {generator_name}...")
         # Generate images for script lines
-        image_paths = image_generator.generate_images_for_script(request.script_lines, request.style)
+        image_paths = generator.generate_images_for_script(request.script_lines, request.style)
         
         # Filter out None values (failed generations)
         successful_paths = [path for path in image_paths if path is not None]
         
         if successful_paths:
-            logger.info(f"Generated {len(successful_paths)} images successfully")
+            logger.info(f"Generated {len(successful_paths)} images successfully using {generator_name}")
             return {
                 "success": True,
                 "image_paths": successful_paths,
                 "total_requested": len(request.script_lines),
                 "total_generated": len(successful_paths),
                 "style": request.style,
-                "message": f"Generated {len(successful_paths)} images successfully"
+                "generator_used": generator_name,
+                "message": f"Generated {len(successful_paths)} images successfully using {generator_name}"
             }
         else:
-            logger.error("Failed to generate any images")
-            raise HTTPException(status_code=500, detail="Failed to generate any images")
+            logger.error(f"Failed to generate any images using {generator_name}")
+            raise HTTPException(status_code=500, detail=f"Failed to generate any images using {generator_name}")
             
     except Exception as e:
-        logger.error(f"Failed to generate images: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to generate images: {str(e)}")
+        logger.error(f"Failed to generate images using {generator_name}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate images using {generator_name}: {str(e)}")
 
 @app.post("/create-video-with-images")
 async def create_video_with_images(request: ImageVideoRequest):
@@ -519,6 +554,36 @@ async def get_available_story_types():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get story types: {str(e)}")
 
+@app.get("/available-image-generators")
+async def get_available_image_generators():
+    """Get available image generators and their status"""
+    try:
+        return {
+            "success": True,
+            "generators": {
+                "dalle": {
+                    "name": "DALL-E 3",
+                    "enabled": image_generator is not None,
+                    "description": "OpenAI's DALL-E 3 model for high-quality image generation",
+                    "requires_api_key": "OPENAI_API_KEY"
+                },
+                "stable_diffusion": {
+                    "name": "Stable Diffusion",
+                    "enabled": stable_diffusion_generator is not None,
+                    "description": "Open-source Stable Diffusion model for local image generation",
+                    "model_id": "SG161222/Realistic_Vision_V5.1_noVAE",
+                    "requires": "PyTorch, diffusers library"
+                }
+            },
+            "default": "dalle",
+            "usage": {
+                "generate_images": "Set use_stable_diffusion=true to use Stable Diffusion",
+                "full_pipeline": "Set use_stable_diffusion=true to use Stable Diffusion"
+            }
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get image generators: {str(e)}")
+
 @app.get("/download/{file_type}/{filename}")
 async def download_file(file_type: str, filename: str):
     """Download generated files"""
@@ -667,9 +732,23 @@ async def full_pipeline_with_images(request: FullPipelineWithImagesRequest = Ful
         
         # Step 3: Generate images
         logger.info("Step 3: Generating images...")
-        image_paths = image_generator.generate_images_for_script(visual_texts, "relatable")
+        logger.info(f"Using {'Stable Diffusion' if request.use_stable_diffusion else 'DALL-E'} for image generation")
+        
+        # Choose image generator based on switch
+        if request.use_stable_diffusion:
+            if stable_diffusion_generator is None:
+                raise HTTPException(status_code=503, detail="Stable Diffusion generator not available. Check model configuration.")
+            generator = stable_diffusion_generator
+            generator_name = "Stable Diffusion"
+        else:
+            if image_generator is None:
+                raise HTTPException(status_code=503, detail="DALL-E image generator not available. Check OPENAI_API_KEY configuration.")
+            generator = image_generator
+            generator_name = "DALL-E"
+        
+        image_paths = generator.generate_images_for_script(visual_texts, "relatable")
         successful_image_paths = [path for path in image_paths if path is not None]
-        logger.info(f"Generated {len(successful_image_paths)} images")
+        logger.info(f"Generated {len(successful_image_paths)} images using {generator_name}")
         
         # Step 4: Create video with audio and images
         logger.info("Step 4: Creating video with audio and images...")
@@ -725,12 +804,39 @@ async def full_pipeline_with_images(request: FullPipelineWithImagesRequest = Ful
             "video_path": result_video_path,
             "video_creator": "FFmpegVideoCreator" if request.use_ffmpeg else "ShotstackVideoCreator",
             "animation_type": request.animation_type if request.use_ffmpeg else "N/A",
+            "image_generator": generator_name,
             "script_source": "existing" if request.use_existing_script else "generated",
             "message": "Full pipeline with images completed successfully"
         }
     except Exception as e:
         logger.error(f"Full pipeline with images failed: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Full pipeline with images failed: {str(e)}")
+
+import atexit
+import signal
+
+def cleanup_resources():
+    """Clean up resources on application shutdown"""
+    logger.info("Cleaning up resources...")
+    if stable_diffusion_generator is not None:
+        try:
+            stable_diffusion_generator.cleanup()
+            logger.info("StableDiffusionGenerator cleaned up successfully")
+        except Exception as e:
+            logger.error(f"Error cleaning up StableDiffusionGenerator: {e}")
+
+# Register cleanup function
+atexit.register(cleanup_resources)
+
+def signal_handler(signum, frame):
+    """Handle shutdown signals"""
+    logger.info(f"Received signal {signum}, shutting down...")
+    cleanup_resources()
+    exit(0)
+
+# Register signal handlers
+signal.signal(signal.SIGINT, signal_handler)
+signal.signal(signal.SIGTERM, signal_handler)
 
 if __name__ == "__main__":
     host = os.getenv("APP_HOST", "0.0.0.0")
