@@ -430,36 +430,36 @@ class StableDiffusionGenerator:
         Returns:
             Motion bucket ID for the specified motion type
         """
-        # Motion bucket ID mapping for different motion types
+        # Motion bucket ID mapping for different motion types - REDUCED to prevent distortion
         motion_buckets = {
-            "random": [127, 200, 300, 400, 500],  # Random selection from dynamic buckets
-            "camera_movement": [200, 300, 400],    # Camera movement effects
-            "object_motion": [127, 200, 300],      # Object motion effects
-            "zoom": [200, 300],                    # Zoom effects
-            "pan": [127, 200],                     # Pan effects
-            "dynamic": [200, 300, 400, 500],       # Most dynamic motion
-            "subtle": [127, 150, 175],             # Subtle motion
+            "random": [50, 75, 100],  # Reduced from high values to prevent distortion
+            "camera_movement": [50, 75, 100],    # Reduced camera movement
+            "object_motion": [50, 75],      # Reduced object motion
+            "zoom": [50, 75],                    # Reduced zoom effects
+            "pan": [50, 75],                     # Reduced pan effects
+            "dynamic": [75, 100, 125],       # Reduced dynamic motion
+            "subtle": [25, 50, 75],             # Subtle motion - kept low
         }
         
         if motion_type in motion_buckets:
             import random
             return random.choice(motion_buckets[motion_type])
         else:
-            # Default to dynamic motion
-            return 200
+            # Default to subtle motion to prevent distortion
+            return 50
     
     def generate_video_from_image(
         self,
         image_path: str,
-        motion_strength: float = 1.0,  # Increased from 0.8 to 1.0 for more visible motion
+        motion_strength: float = 0.5,  # Reduced from 1.0 to 0.5 to prevent distortion
         num_frames: int = 15,  # Reduced from 25 to 15 for faster generation
         fps: int = 8,
         seed: Optional[int] = None,
         motion_bucket_id: int = None,  # Allow dynamic selection
-        noise_aug_strength: float = 0.3,  # Increased from 0.1 to 0.3 for more visible motion
+        noise_aug_strength: float = 0.1,  # Reduced from 0.3 to 0.1 to prevent artifacts
         target_duration: Optional[float] = None,  # Add target duration parameter
         fast_mode: bool = True,  # Add fast mode for quicker generation
-        motion_type: str = "dynamic"  # Type of motion to generate
+        motion_type: str = "subtle"  # Changed from "dynamic" to "subtle" to prevent distortion
     ) -> Optional[str]:
         """
         Generate a motion video from a single image using Stable Video Diffusion
@@ -550,9 +550,9 @@ class StableDiffusionGenerator:
                 # Generate video frames with enhanced motion settings and color correction
                 pipeline_kwargs = {
                     'decode_chunk_size': 4 if fast_mode else 8,  # Smaller chunks for faster processing
-                    'motion_bucket_id': motion_bucket_id,  # More dynamic motion
+                    'motion_bucket_id': motion_bucket_id,  # More conservative motion
                     'fps': fps,
-                    'noise_aug_strength': noise_aug_strength,  # Increased for more visible motion
+                    'noise_aug_strength': noise_aug_strength,  # Reduced for less artifacts
                     'num_frames': num_frames,
                     'num_inference_steps': 14 if fast_mode else 25,  # More steps for better quality
                 }
@@ -588,7 +588,7 @@ class StableDiffusionGenerator:
                     motion_score = np.mean(diff)
                     
                     logger.info(f"Motion score: {motion_score:.2f}")
-                    motion_detected = motion_score > 2.0  # Lower threshold for more sensitive detection
+                    motion_detected = motion_score > 1.0  # Reduced threshold from 2.0 to 1.0 for more sensitive detection
                     logger.info(f"Motion detected: {motion_detected}")
                     
                     if not motion_detected:
@@ -645,8 +645,8 @@ class StableDiffusionGenerator:
         self,
         script_lines: List[str],
         style: str = "realistic",
-        motion_strength: float = 0.8,
-        num_frames: int = 25,
+        motion_strength: float = 0.5,  # Reduced from 0.8 to 0.5 to prevent distortion
+        num_frames: int = 15,  # Reduced from 25 to 15 for faster generation
         fps: int = 8,
         maintain_character_consistency: bool = True
     ) -> List[Optional[str]]:
@@ -824,40 +824,40 @@ class StableDiffusionGenerator:
                 img_array = img_array / 255.0 * 255
                 img_array = img_array.astype(np.uint8)
             
-            # Apply gentle color correction to reduce SVD artifacts
-            # Normalize brightness to prevent extreme values
+            # Apply very gentle color correction to reduce SVD artifacts - REDUCED intensity
+            # Only fix extreme brightness issues
             mean_brightness = img_array.mean()
-            if mean_brightness > 180:  # Too bright
-                img_array = np.clip(img_array * 0.9, 0, 255).astype(np.uint8)
-            elif mean_brightness < 50:  # Too dark
-                img_array = np.clip(img_array * 1.1, 0, 255).astype(np.uint8)
+            if mean_brightness > 200:  # Only if very bright (increased threshold)
+                img_array = np.clip(img_array * 0.95, 0, 255).astype(np.uint8)  # Very gentle reduction
+            elif mean_brightness < 30:  # Only if very dark (increased threshold)
+                img_array = np.clip(img_array * 1.05, 0, 255).astype(np.uint8)  # Very gentle increase
             
-            # Balance color channels to prevent SVD color artifacts
+            # Balance color channels only if extreme imbalance - REDUCED intensity
             if len(img_array.shape) == 3:
                 r_mean = img_array[:, :, 0].mean()
                 g_mean = img_array[:, :, 1].mean()
                 b_mean = img_array[:, :, 2].mean()
                 
-                # If one channel is significantly different, balance it
+                # If one channel is significantly different, balance it gently
                 max_channel = max(r_mean, g_mean, b_mean)
                 min_channel = min(r_mean, g_mean, b_mean)
                 
-                if max_channel - min_channel > 20:  # Significant imbalance
+                if max_channel - min_channel > 40:  # Increased threshold - only fix extreme imbalance
                     target_mean = (r_mean + g_mean + b_mean) / 3
                     if r_mean > 0:
-                        img_array[:, :, 0] = np.clip(img_array[:, :, 0] * (target_mean / r_mean), 0, 255).astype(np.uint8)
+                        img_array[:, :, 0] = np.clip(img_array[:, :, 0] * (target_mean / r_mean * 0.95 + 0.05), 0, 255).astype(np.uint8)
                     if g_mean > 0:
-                        img_array[:, :, 1] = np.clip(img_array[:, :, 1] * (target_mean / g_mean), 0, 255).astype(np.uint8)
+                        img_array[:, :, 1] = np.clip(img_array[:, :, 1] * (target_mean / g_mean * 0.95 + 0.05), 0, 255).astype(np.uint8)
                     if b_mean > 0:
-                        img_array[:, :, 2] = np.clip(img_array[:, :, 2] * (target_mean / b_mean), 0, 255).astype(np.uint8)
+                        img_array[:, :, 2] = np.clip(img_array[:, :, 2] * (target_mean / b_mean * 0.95 + 0.05), 0, 255).astype(np.uint8)
             
             # Convert back to PIL Image
             processed_image = Image.fromarray(img_array)
             
-            # Apply gentle sharpening to improve SVD quality
+            # Apply very gentle sharpening to improve SVD quality - REDUCED intensity
             from PIL import ImageEnhance
             sharpener = ImageEnhance.Sharpness(processed_image)
-            processed_image = sharpener.enhance(1.1)  # Slight sharpening
+            processed_image = sharpener.enhance(1.05)  # Very slight sharpening (reduced from 1.1)
             
             return processed_image
             
@@ -866,7 +866,7 @@ class StableDiffusionGenerator:
             return image
     
     def _correct_video_frame_colors(self, frame):
-        """Correct color issues in video frames with comprehensive SVD artifact removal"""
+        """Correct color issues in video frames with gentle SVD artifact removal"""
         try:
             import numpy as np
             import logging
@@ -885,21 +885,21 @@ class StableDiffusionGenerator:
             if frame.ndim == 3 and frame.shape[2] > 3:
                 frame = frame[:, :, :3]
 
-            # Apply comprehensive SVD color correction
+            # Apply gentle SVD color correction - REDUCED intensity to prevent distortion
             frame_mean = frame.mean()
             frame_std = frame.std()
             
-            # Fix brightness issues (common SVD problem)
-            if frame_mean > 180:  # Too bright
-                logger.debug(f"Frame too bright (mean: {frame_mean:.1f}), reducing brightness")
-                # Reduce brightness while preserving contrast
-                frame = np.clip(frame * 0.8, 0, 255).astype(np.uint8)
-            elif frame_mean < 40:  # Too dark
-                logger.debug(f"Frame too dark (mean: {frame_mean:.1f}), increasing brightness")
-                # Increase brightness while preserving contrast
-                frame = np.clip(frame * 1.4, 0, 255).astype(np.uint8)
+            # Fix extreme brightness issues only (common SVD problem)
+            if frame_mean > 200:  # Only fix if very bright (increased threshold)
+                logger.debug(f"Frame very bright (mean: {frame_mean:.1f}), gently reducing brightness")
+                # Very gentle brightness reduction
+                frame = np.clip(frame * 0.9, 0, 255).astype(np.uint8)
+            elif frame_mean < 30:  # Only fix if very dark (increased threshold)
+                logger.debug(f"Frame very dark (mean: {frame_mean:.1f}), gently increasing brightness")
+                # Very gentle brightness increase
+                frame = np.clip(frame * 1.2, 0, 255).astype(np.uint8)
             
-            # Fix color channel imbalance (very common SVD issue)
+            # Fix extreme color channel imbalance only (very common SVD issue)
             if len(frame.shape) == 3:  # Color image
                 r_mean = frame[:, :, 0].mean()
                 g_mean = frame[:, :, 1].mean()
@@ -909,42 +909,42 @@ class StableDiffusionGenerator:
                 max_channel = max(r_mean, g_mean, b_mean)
                 min_channel = min(r_mean, g_mean, b_mean)
                 
-                if max_channel - min_channel > 25:  # Significant imbalance
-                    logger.debug(f"Color imbalance detected (R:{r_mean:.1f}, G:{g_mean:.1f}, B:{b_mean:.1f}), balancing")
-                    # Balance colors by adjusting each channel
+                if max_channel - min_channel > 40:  # Increased threshold - only fix extreme imbalance
+                    logger.debug(f"Extreme color imbalance detected (R:{r_mean:.1f}, G:{g_mean:.1f}, B:{b_mean:.1f}), gently balancing")
+                    # Very gentle color balancing
                     target_mean = (r_mean + g_mean + b_mean) / 3
                     if r_mean > 0:
-                        frame[:, :, 0] = np.clip(frame[:, :, 0] * (target_mean / r_mean), 0, 255).astype(np.uint8)
+                        frame[:, :, 0] = np.clip(frame[:, :, 0] * (target_mean / r_mean * 0.9 + 0.1), 0, 255).astype(np.uint8)
                     if g_mean > 0:
-                        frame[:, :, 1] = np.clip(frame[:, :, 1] * (target_mean / g_mean), 0, 255).astype(np.uint8)
+                        frame[:, :, 1] = np.clip(frame[:, :, 1] * (target_mean / g_mean * 0.9 + 0.1), 0, 255).astype(np.uint8)
                     if b_mean > 0:
-                        frame[:, :, 2] = np.clip(frame[:, :, 2] * (target_mean / b_mean), 0, 255).astype(np.uint8)
+                        frame[:, :, 2] = np.clip(frame[:, :, 2] * (target_mean / b_mean * 0.9 + 0.1), 0, 255).astype(np.uint8)
             
-            # Fix contrast issues (SVD often produces flat images)
-            if frame_std < 25:  # Low contrast
-                logger.debug(f"Low contrast detected (std: {frame_std:.1f}), enhancing")
-                # Enhance contrast using histogram stretching
-                p5 = np.percentile(frame, 5)
-                p95 = np.percentile(frame, 95)
-                if p95 > p5:
-                    frame = np.clip((frame - p5) * 255 / (p95 - p5), 0, 255).astype(np.uint8)
+            # Fix extreme contrast issues only (SVD often produces flat images)
+            if frame_std < 15:  # Increased threshold - only fix very flat images
+                logger.debug(f"Very low contrast detected (std: {frame_std:.1f}), gently enhancing")
+                # Very gentle contrast enhancement
+                p10 = np.percentile(frame, 10)
+                p90 = np.percentile(frame, 90)
+                if p90 > p10:
+                    frame = np.clip((frame - p10) * 255 / (p90 - p10), 0, 255).astype(np.uint8)
             
-            # Fix saturation issues (SVD can produce oversaturated colors)
+            # Fix extreme saturation issues only (SVD can produce oversaturated colors)
             if len(frame.shape) == 3:
                 # Convert to HSV to adjust saturation
                 import cv2
                 hsv = cv2.cvtColor(frame, cv2.COLOR_RGB2HSV)
                 saturation = hsv[:, :, 1]
                 
-                if saturation.mean() > 150:  # Too saturated
-                    logger.debug(f"Oversaturated image detected, reducing saturation")
-                    hsv[:, :, 1] = np.clip(saturation * 0.7, 0, 255).astype(np.uint8)
+                if saturation.mean() > 180:  # Increased threshold - only fix very oversaturated
+                    logger.debug(f"Very oversaturated image detected, gently reducing saturation")
+                    hsv[:, :, 1] = np.clip(saturation * 0.8, 0, 255).astype(np.uint8)
                     frame = cv2.cvtColor(hsv, cv2.COLOR_HSV2RGB)
             
             # Final safety check
             frame = np.clip(frame, 0, 255).astype(np.uint8)
             
-            logger.debug(f"Corrected frame - dtype: {frame.dtype}, max: {frame.max()}, min: {frame.min()}, mean: {frame.mean():.1f}")
+            logger.debug(f"Gently corrected frame - dtype: {frame.dtype}, max: {frame.max()}, min: {frame.min()}, mean: {frame.mean():.1f}")
             return frame
             
         except Exception as e:
@@ -1088,8 +1088,8 @@ class StableDiffusionGenerator:
         """Regenerate video with different motion settings for better motion"""
         logger.info("Regenerating video with enhanced motion settings...")
         
-        # Try different motion bucket IDs for better motion
-        motion_bucket_ids = [127, 200, 300, 400, 500]
+        # Try different motion bucket IDs for better motion - REDUCED to prevent distortion
+        motion_bucket_ids = [25, 50, 75, 100]  # Reduced from high values
         
         for bucket_id in motion_bucket_ids:
             try:
@@ -1099,7 +1099,7 @@ class StableDiffusionGenerator:
                     'decode_chunk_size': 4,
                     'motion_bucket_id': bucket_id,
                     'fps': fps,
-                    'noise_aug_strength': 0.5,  # Higher noise for more motion
+                    'noise_aug_strength': 0.1,  # Reduced from 0.5 to 0.1 to prevent artifacts
                     'num_frames': 12,
                 }
                 
@@ -1122,7 +1122,7 @@ class StableDiffusionGenerator:
                     
                     logger.info(f"Motion score with bucket {bucket_id}: {motion_score:.2f}")
                     
-                    if motion_score > 5.0:  # Good motion detected
+                    if motion_score > 2.0:  # Reduced threshold from 5.0 to 2.0 for better detection
                         logger.info(f"Good motion detected with bucket {bucket_id}")
                         
                         # Save video
