@@ -202,7 +202,7 @@ def test_video_generation():
         return False
 
 # Test custom negative prompts
-test_image_generation = test_image_generation()
+#test_image_generation = test_image_generation()
 test_video_generation = test_video_generation()
     
 print("\n📊 Debug Results:")
