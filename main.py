@@ -785,6 +785,7 @@ async def full_pipeline_with_images(request: FullPipelineWithImagesRequest = Ful
             result_video_path = ffmpeg_video_creator.create_video_with_images(
                 audio_path=audio_path,
                 narration_lines=ffmpeg_narration_lines,
+                image_paths=successful_image_paths,
                 output_path=video_path,
                 animation_type=request.animation_type
             )

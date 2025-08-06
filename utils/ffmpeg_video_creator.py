@@ -383,6 +383,158 @@ class FFmpegVideoCreator:
             # Fallback to simple video creation
             self.create_simple_video(audio_path, output_path, audio_duration)
     
+    def create_video_with_images(
+        self, 
+        audio_path: str, 
+        narration_lines: List[dict], 
+        image_paths: List[str], 
+        output_path: str,
+        animation_type: str = "zoom_in"
+    ) -> str:
+        """
+        Create a video with audio, images, and subtitles
+        
+        Args:
+            audio_path: Path to audio file
+            narration_lines: List of narration line dictionaries
+            image_paths: List of image paths
+            output_path: Output video path
+            animation_type: Type of animation (zoom_in, pan, fade, etc.)
+            
+        Returns:
+            Path to the created video
+        """
+        logger.info(f"Creating video with {len(image_paths)} images and {len(narration_lines)} narration lines")
+        
+        # Create temporary directory for assets
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Create subtitle images
+            subtitle_paths = []
+            for i, line in enumerate(narration_lines):
+                subtitle_path = os.path.join(temp_dir, f"subtitle_{i}.png")
+                self._create_subtitle_image(subtitle_path, line["text"])
+                subtitle_paths.append(subtitle_path)
+            
+            # Create final video using FFmpeg
+            self._combine_images_with_audio(
+                audio_path, image_paths, subtitle_paths, narration_lines, output_path, animation_type
+            )
+            
+        return output_path
+    
+    def _combine_images_with_audio(
+        self, 
+        audio_path: str, 
+        image_paths: List[str], 
+        subtitle_paths: List[str], 
+        narration_lines: List[dict], 
+        output_path: str,
+        animation_type: str
+    ):
+        """Combine images, audio, and subtitles into final video"""
+        
+        try:
+            # Get audio duration
+            probe = ffmpeg.probe(audio_path)
+            audio_duration = float(probe['streams'][0]['duration'])
+            logger.info(f"Audio duration: {audio_duration} seconds")
+            
+            # Create video stream from images
+            video_inputs = []
+            current_time = 0
+            
+            # Ensure we have the same number of images and narration lines
+            min_count = min(len(image_paths), len(subtitle_paths), len(narration_lines))
+            logger.info(f"Processing {min_count} segments (images: {len(image_paths)}, subtitles: {len(subtitle_paths)}, narration: {len(narration_lines)})")
+            
+            for i in range(min_count):
+                image_path = image_paths[i]
+                subtitle_path = subtitle_paths[i]
+                line = narration_lines[i]
+                duration = line.get("duration", 3.0)
+                logger.info(f"Processing segment {i+1}: duration={duration}s, image={image_path}")
+                
+                # Apply animation filter based on type
+                try:
+                    if animation_type == "zoom_in":
+                        video_stream = (
+                            ffmpeg
+                            .input(image_path, loop=1, t=duration)
+                            .filter('scale', self.width, self.height)
+                            .filter('zoompan', z='min(zoom+0.0015,1.5)', d=125, x='iw/2-(iw/zoom/2)', y='ih/2-(ih/zoom/2)')
+                        )
+                    elif animation_type == "pan":
+                        video_stream = (
+                            ffmpeg
+                            .input(image_path, loop=1, t=duration)
+                            .filter('scale', self.width * 1.2, self.height * 1.2)
+                            .filter('crop', self.width, self.height, 't*50', 't*30')
+                        )
+                    elif animation_type == "fade":
+                        video_stream = (
+                            ffmpeg
+                            .input(image_path, loop=1, t=duration)
+                            .filter('scale', self.width, self.height)
+                            .filter('fade', t='in', st=0, d=0.5)
+                            .filter('fade', t='out', st=duration-0.5, d=0.5)
+                        )
+                    else:
+                        # Default: static image
+                        video_stream = (
+                            ffmpeg
+                            .input(image_path, loop=1, t=duration)
+                            .filter('scale', self.width, self.height)
+                        )
+                except Exception as e:
+                    logger.warning(f"Animation filter {animation_type} failed: {e}, using static image")
+                    # Fallback to static image
+                    video_stream = (
+                        ffmpeg
+                        .input(image_path, loop=1, t=duration)
+                        .filter('scale', self.width, self.height)
+                    )
+                
+                # Create subtitle stream
+                subtitle_stream = (
+                    ffmpeg
+                    .input(subtitle_path, loop=1, t=duration)
+                    .filter('scale', self.width, self.height)
+                )
+                
+                # Overlay subtitle on video
+                combined = ffmpeg.overlay(video_stream, subtitle_stream, x=0, y=0)
+                video_inputs.append(combined)
+                
+                current_time += duration
+            
+            # Concatenate all video segments
+            if len(video_inputs) > 1:
+                video = ffmpeg.concat(*video_inputs, v=1, a=0)
+            else:
+                video = video_inputs[0]
+            
+            # Add audio
+            audio = ffmpeg.input(audio_path)
+            
+            # Output final video
+            logger.info(f"Rendering final video to: {output_path}")
+            (
+                ffmpeg
+                .output(video, audio, output_path,
+                       vcodec='libx264', acodec='aac',
+                       pix_fmt='yuv420p', r=self.fps,
+                       video_bitrate='2M', audio_bitrate='128k')
+                .overwrite_output()
+                .run(quiet=True)
+            )
+            
+            logger.info(f"Video created successfully: {output_path}")
+            
+        except Exception as e:
+            logger.error(f"Error combining images with audio: {e}")
+            # Fallback to simple video creation
+            self.create_simple_video(audio_path, output_path, audio_duration)
+    
     def create_simple_video(self, audio_path: str, output_path: str, duration: float = 30.0) -> str:
         """Create a simple video with just audio and a static background"""
         
