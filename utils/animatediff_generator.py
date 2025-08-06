@@ -112,7 +112,6 @@ class AnimateDiffGenerator:
                 
                 # Try different AnimateDiff models if the primary one fails
                 animatediff_models = [
-                    self.animatediff_model_id,
                     "ByteDance/AnimateDiff-v1-5",
                     "ByteDance/AnimateDiff-v1-4",
                     "guoyww/animatediff-v1-5-2"
@@ -122,18 +121,29 @@ class AnimateDiffGenerator:
                     try:
                         logger.info(f"Trying AnimateDiff model: {model_id}")
                         
-                        # Load AnimateDiff with the Stable Diffusion model
-                        self.animatediff_pipeline = AnimateDiffPipeline.from_pretrained(
-                            self.sd_model_id,
-                            motion_module_path=model_id,
-                            torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
-                            variant="fp16" if self.device == "cuda" else None
-                        )
+                        # Try loading AnimateDiff directly first
+                        try:
+                            self.animatediff_pipeline = AnimateDiffPipeline.from_pretrained(
+                                model_id,
+                                torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
+                                variant="fp16" if self.device == "cuda" else None
+                            )
+                            logger.info(f"Loaded AnimateDiff directly from {model_id}")
+                        except Exception as direct_error:
+                            logger.info(f"Direct loading failed, trying with SD model: {direct_error}")
+                            # Fallback: try with Stable Diffusion model
+                            self.animatediff_pipeline = AnimateDiffPipeline.from_pretrained(
+                                self.sd_model_id,
+                                motion_module_path=model_id,
+                                torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
+                                variant="fp16" if self.device == "cuda" else None
+                            )
+                            logger.info(f"Loaded AnimateDiff with SD model and motion module: {model_id}")
                         
                         # Configure scheduler for AnimateDiff
                         try:
                             scheduler = DDIMScheduler.from_pretrained(
-                                self.sd_model_id,
+                                model_id,
                                 subfolder="scheduler"
                             )
                             self.animatediff_pipeline.scheduler = scheduler
@@ -161,9 +171,11 @@ class AnimateDiffGenerator:
                 
                 if self.animatediff_pipeline is None:
                     logger.warning("All AnimateDiff models failed to load - motion generation will be disabled")
+                    logger.info("You can still use Stable Diffusion for image generation")
                     
             else:
                 logger.warning("AnimateDiff not available - motion generation will be disabled")
+                logger.info("Install with: pip install diffusers[animatediff]")
                 
         except Exception as e:
             logger.error(f"Error loading pipelines: {e}")
