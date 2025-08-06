@@ -28,8 +28,8 @@ def upload_to_s3(file_path: str, s3_key: str = None) -> str:
             timestamp = time.strftime("%Y%m%d_%H%M%S")
             s3_key = f"test_results/{timestamp}_{filename}"
         
-        # Upload file
-        s3_url = s3_uploader.upload_file(file_path, s3_key)
+        # Upload file using the correct method name
+        s3_url = s3_uploader.upload_video(file_path, s3_key, folder="test_results")
         
         if s3_url:
             print(f"✅ Uploaded to S3: {s3_url}")
