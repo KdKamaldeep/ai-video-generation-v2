@@ -111,12 +111,33 @@ class ImageGenerator:
         # Clean and enhance the text
         clean_text = text.strip().replace('"', '').replace("'", "")
         
-        enhanced_prompt = (
-            f"{clean_text}. "
-            f"Style: {style_desc}. "
-            f"High resolution, well-lit, clear composition. "
-            f"centered subject, 9:16 aspect ratio."
-        )
+        # Check if the text contains motion cues for video generation
+        motion_keywords = [
+            "camera", "panning", "dollying", "tilting", "zooming", "tracking", "creeping",
+            "walking", "running", "falling", "rising", "spinning", "swaying", "moving",
+            "blowing", "flowing", "falling", "rising", "breathing", "blinking", "fidgeting",
+            "trembling", "twitching", "nodding", "vibration", "flickering", "shadows"
+        ]
+        
+        has_motion = any(keyword in clean_text.lower() for keyword in motion_keywords)
+        
+        if has_motion:
+            # For motion cues, create a static frame that suggests the motion
+            enhanced_prompt = (
+                f"{clean_text}. "
+                f"Style: {style_desc}. "
+                f"High resolution, well-lit, clear composition. "
+                f"Capture the moment that suggests the described motion. "
+                f"Centered subject, 9:16 aspect ratio, cinematic framing."
+            )
+        else:
+            # For static images, use the original approach
+            enhanced_prompt = (
+                f"{clean_text}. "
+                f"Style: {style_desc}. "
+                f"High resolution, well-lit, clear composition. "
+                f"centered subject, 9:16 aspect ratio."
+            )
         
         return enhanced_prompt
     

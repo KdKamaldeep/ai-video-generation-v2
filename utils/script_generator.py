@@ -109,15 +109,21 @@ class ScriptGenerator:
                     3. Break the story into 3–5 short narration lines. Each line should include:
                        - "text": The narration sentence (keep it vivid and human-sounding)
                        - "duration": Duration in seconds (2–5s depending on pace and tension)
-                       - "visual_suggestion": A visual idea that fits a vertical format — suggest camera angle, lighting, setting, mood (e.g., "over-the-shoulder shot of woman at dusk")
+                       - "visual_suggestion": A visual idea that includes MOTION CUES for video generation — suggest camera movement, object motion, or dynamic elements (e.g., "camera slowly panning across a person walking in a park at sunset", "close-up of hands typing on keyboard with subtle movement", "dolly shot moving towards a door with flickering light")
 
                     4. Keep content safe for all audiences, but allow emotional depth, mystery, tension, or inspiration depending on the story type.
                     5. Match tone and pacing to the {story_type} theme:
-                       - Horror/thriller: Use short, tense lines and suspenseful reveals
-                       - Motivational/inspirational: Use reflective lines with gradual emotional build
-                       - Relatable/life lessons: Use authentic, grounded narration
+                       - Horror/thriller: Use short, tense lines and suspenseful reveals with motion cues like "camera slowly creeping", "shadows moving", "objects falling"
+                       - Motivational/inspirational: Use reflective lines with gradual emotional build and motion cues like "camera slowly rising", "person walking forward", "sunlight gradually appearing"
+                       - Relatable/life lessons: Use authentic, grounded narration with motion cues like "camera gently panning", "subtle hand movements", "natural breathing motion"
 
-                    6. Include:
+                    6. IMPORTANT: Each visual_suggestion MUST include motion cues that Stable Video Diffusion can use:
+                       - Camera movements: "panning", "dollying", "tilting", "zooming", "tracking"
+                       - Object movements: "walking", "running", "falling", "rising", "spinning", "swaying"
+                       - Environmental motion: "wind blowing", "water flowing", "leaves falling", "smoke rising"
+                       - Subtle motions: "breathing", "blinking", "fidgeting", "micro-movements"
+
+                    7. Include:
                        - "title": A complete, catchy title that finishes the "Why Would You..." question
                        - "tags": 5 YouTube tags relevant to the story (shorts, emotional, horror, etc.)
                        - Optional: "cta": a final line that encourages reflection or audience response
@@ -131,7 +137,7 @@ class ScriptGenerator:
                         {{
                           "text": "Why would you...?",
                           "duration": 4.5,
-                          "visual_suggestion": "..."
+                          "visual_suggestion": "camera slowly panning across a person walking in a park at sunset, with gentle wind moving tree branches"
                         }},
                         ...
                       ],
@@ -176,45 +182,45 @@ class ScriptGenerator:
             "motivation": {
                 "title": "Why Would You Doubt Yourself?",
                 "narration": [
-                    ScriptLine(text="Why would you doubt yourself when you've already survived every bad day so far?", duration=4.5, visual_suggestion="person looking in mirror"),
-                    ScriptLine(text="You're stronger than you think, and more capable than you believe.", duration=4.0, visual_suggestion="person overcoming obstacles"),
-                    ScriptLine(text="So why would you doubt yourself? You've got this!", duration=3.5, visual_suggestion="person smiling confidently")
+                    ScriptLine(text="Why would you doubt yourself when you've already survived every bad day so far?", duration=4.5, visual_suggestion="camera slowly panning across a person looking in mirror with subtle breathing motion"),
+                    ScriptLine(text="You're stronger than you think, and more capable than you believe.", duration=4.0, visual_suggestion="camera dollying forward as person walks through obstacles with determination"),
+                    ScriptLine(text="So why would you doubt yourself? You've got this!", duration=3.5, visual_suggestion="camera gently tilting up as person smiles confidently with natural head movement")
                 ],
                 "tags": ["motivation", "self-improvement", "confidence", "shorts", "inspiration"]
             },
             "horror": {
                 "title": "Why Would You Go Into That Dark Room?",
                 "narration": [
-                    ScriptLine(text="Why would you go into that dark room when you know something's waiting?", duration=4.0, visual_suggestion="dark doorway with shadows"),
-                    ScriptLine(text="Every horror movie ever made tells you not to do this.", duration=3.5, visual_suggestion="person hesitating at doorway"),
-                    ScriptLine(text="But somehow, you still reach for that light switch...", duration=4.0, visual_suggestion="hand reaching for switch")
+                    ScriptLine(text="Why would you go into that dark room when you know something's waiting?", duration=4.0, visual_suggestion="camera slowly creeping towards dark doorway with flickering shadows moving"),
+                    ScriptLine(text="Every horror movie ever made tells you not to do this.", duration=3.5, visual_suggestion="camera tracking person hesitating at doorway with trembling hand movement"),
+                    ScriptLine(text="But somehow, you still reach for that light switch...", duration=4.0, visual_suggestion="close-up of hand slowly reaching for light switch with subtle finger twitching")
                 ],
                 "tags": ["horror", "spooky", "thriller", "shorts", "suspense"]
             },
             "real_life": {
                 "title": "Why Would You Leave Your Phone on Silent?",
                 "narration": [
-                    ScriptLine(text="Why would you leave your phone on silent?", duration=3.0, visual_suggestion="person frantically searching for phone"),
-                    ScriptLine(text="You know you're going to miss that important call.", duration=4.0, visual_suggestion="phone ringing with missed call notification"),
-                    ScriptLine(text="But somehow, you still do it every single time.", duration=3.5, visual_suggestion="person facepalming in frustration")
+                    ScriptLine(text="Why would you leave your phone on silent?", duration=3.0, visual_suggestion="camera panning across person frantically searching for phone with rapid hand movements"),
+                    ScriptLine(text="You know you're going to miss that important call.", duration=4.0, visual_suggestion="close-up of phone screen with missed call notification and subtle vibration motion"),
+                    ScriptLine(text="But somehow, you still do it every single time.", duration=3.5, visual_suggestion="camera slowly zooming in as person facepalms with natural breathing motion")
                 ],
                 "tags": ["funny", "relatable", "phone", "shorts", "real_life"]
             },
             "adventure": {
                 "title": "Why Would You Stay Home When Adventure Calls?",
                 "narration": [
-                    ScriptLine(text="Why would you stay home when adventure is calling your name?", duration=4.0, visual_suggestion="person looking out window at mountains"),
-                    ScriptLine(text="The world is full of amazing places waiting to be discovered.", duration=4.5, visual_suggestion="travel montage"),
-                    ScriptLine(text="So pack your bags and answer the call of adventure!", duration=3.5, visual_suggestion="person packing backpack")
+                    ScriptLine(text="Why would you stay home when adventure is calling your name?", duration=4.0, visual_suggestion="camera slowly panning across person looking out window at mountains with wind moving curtains"),
+                    ScriptLine(text="The world is full of amazing places waiting to be discovered.", duration=4.5, visual_suggestion="camera dollying through travel montage with flowing motion between scenes"),
+                    ScriptLine(text="So pack your bags and answer the call of adventure!", duration=3.5, visual_suggestion="camera tracking person packing backpack with hands moving items")
                 ],
                 "tags": ["adventure", "travel", "exploration", "shorts", "wanderlust"]
             },
             "comedy": {
                 "title": "Why Would You Try to Fix That Yourself?",
                 "narration": [
-                    ScriptLine(text="Why would you try to fix that yourself?", duration=3.0, visual_suggestion="person with broken item and tools"),
-                    ScriptLine(text="You know you're going to make it worse.", duration=3.5, visual_suggestion="person making mess"),
-                    ScriptLine(text="But here you are, with YouTube tutorials and hope.", duration=4.0, visual_suggestion="person watching tutorial on phone")
+                    ScriptLine(text="Why would you try to fix that yourself?", duration=3.0, visual_suggestion="camera panning across person with broken item and tools with fidgeting hand movements"),
+                    ScriptLine(text="You know you're going to make it worse.", duration=3.5, visual_suggestion="camera slowly zooming in as person makes mess with exaggerated movements"),
+                    ScriptLine(text="But here you are, with YouTube tutorials and hope.", duration=4.0, visual_suggestion="close-up of person watching tutorial on phone with subtle head nodding motion")
                 ],
                 "tags": ["comedy", "funny", "diy", "shorts", "relatable"]
             }
