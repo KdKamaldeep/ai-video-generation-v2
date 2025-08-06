@@ -135,11 +135,12 @@ class StableDiffusionGenerator:
                 try:
                     logger.info(f"Trying model: {model_id}")
                     
-                    # Load stable video diffusion pipeline
+                    # Load stable video diffusion pipeline with conservative settings
                     self.video_pipeline = StableVideoDiffusionPipeline.from_pretrained(
                         model_id,
                         torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
-                        variant="fp16" if self.device == "cuda" else None
+                        variant="fp16" if self.device == "cuda" else None,
+                        cache_dir="./models"  # Add cache directory to prevent download issues
                     )
                     
                     # Move to device
@@ -152,15 +153,30 @@ class StableDiffusionGenerator:
                     if hasattr(self.video_pipeline, "enable_vae_slicing"):
                         self.video_pipeline.enable_vae_slicing()
                     
-                    logger.info(f"Video pipeline loaded successfully with model: {model_id}")
+                    # Test the pipeline with a simple call
+                    logger.info("Testing video pipeline...")
+                    test_image = Image.new('RGB', (512, 512), color='white')
+                    test_result = self.video_pipeline(
+                        test_image, 
+                        num_frames=2, 
+                        motion_bucket_id=25,
+                        noise_aug_strength=0.02
+                    )
+                    
+                    logger.info(f"Video pipeline loaded and tested successfully with model: {model_id}")
                     break
                     
                 except Exception as e:
                     logger.warning(f"Failed to load model {model_id}: {e}")
+                    # Clean up failed pipeline
+                    if hasattr(self, 'video_pipeline') and self.video_pipeline is not None:
+                        del self.video_pipeline
+                        self.video_pipeline = None
                     continue
             
             if self.video_pipeline is None:
                 logger.error("Failed to load any video pipeline model")
+                raise RuntimeError("No video pipeline could be loaded")
             
         except Exception as e:
             logger.error(f"Error loading video pipeline: {e}")
@@ -547,21 +563,35 @@ class StableDiffusionGenerator:
             signal.alarm(60)
             
             try:
-                # Generate video frames with enhanced motion settings and color correction
+                # Generate video frames with stable motion settings to prevent distortion
                 pipeline_kwargs = {
-                    'decode_chunk_size': 4 if fast_mode else 8,  # Smaller chunks for faster processing
-                    'motion_bucket_id': motion_bucket_id,  # More conservative motion
+                    'decode_chunk_size': 2,  # Reduced for more stable processing
+                    'motion_bucket_id': motion_bucket_id,  # Conservative motion
                     'fps': fps,
-                    'noise_aug_strength': noise_aug_strength,  # Reduced for less artifacts
-                    'num_frames': num_frames,
-                    'num_inference_steps': 14 if fast_mode else 25,  # More steps for better quality
+                    'noise_aug_strength': 0.05,  # Very low noise to prevent artifacts
+                    'num_frames': min(num_frames, 12),  # Limit frames for stability
+                    'num_inference_steps': 20,  # More steps for better quality
                 }
                 
                 if seed is not None:
                     pipeline_kwargs['generator'] = torch.Generator(device=self.device).manual_seed(seed)
                 
-                logger.info(f"Calling video pipeline with kwargs: {pipeline_kwargs}")
-                video_frames = self.video_pipeline(image, **pipeline_kwargs).frames[0]
+                logger.info(f"Calling video pipeline with stable kwargs: {pipeline_kwargs}")
+                
+                # Add error handling for the video pipeline call
+                try:
+                    video_frames = self.video_pipeline(image, **pipeline_kwargs).frames[0]
+                except Exception as pipeline_error:
+                    logger.error(f"Video pipeline failed: {pipeline_error}")
+                    # Try with even more conservative settings
+                    logger.info("Retrying with ultra-conservative settings...")
+                    pipeline_kwargs.update({
+                        'motion_bucket_id': 25,  # Very low motion
+                        'noise_aug_strength': 0.02,  # Minimal noise
+                        'num_frames': 8,  # Fewer frames
+                        'num_inference_steps': 25,  # More steps for stability
+                    })
+                    video_frames = self.video_pipeline(image, **pipeline_kwargs).frames[0]
                 
                 # Cancel timeout
                 signal.alarm(0)
@@ -1096,11 +1126,12 @@ class StableDiffusionGenerator:
                 logger.info(f"Trying motion bucket ID: {bucket_id}")
                 
                 pipeline_kwargs = {
-                    'decode_chunk_size': 4,
+                    'decode_chunk_size': 2,  # Reduced for more stable processing
                     'motion_bucket_id': bucket_id,
                     'fps': fps,
-                    'noise_aug_strength': 0.1,  # Reduced from 0.5 to 0.1 to prevent artifacts
-                    'num_frames': 12,
+                    'noise_aug_strength': 0.05,  # Very low noise to prevent artifacts
+                    'num_frames': 8,  # Fewer frames for stability
+                    'num_inference_steps': 20,  # More steps for better quality
                 }
                 
                 if seed is not None:
