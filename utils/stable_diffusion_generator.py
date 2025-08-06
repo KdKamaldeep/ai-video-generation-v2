@@ -486,6 +486,11 @@ class StableDiffusionGenerator:
         try:
             logger.info(f"Generating video from image: {image_path}")
             
+            # Check if image file exists
+            if not os.path.exists(image_path):
+                logger.error(f"Image file does not exist: {image_path}")
+                return None
+            
             # Select motion bucket ID dynamically if not provided
             if motion_bucket_id is None:
                 motion_bucket_id = self.get_dynamic_motion_bucket_id(motion_type)
@@ -617,13 +622,13 @@ class StableDiffusionGenerator:
             # Save video
             video_path = self._save_video(video_frames, image_path, seed, fps)
             
-            if video_path:
+            if video_path and os.path.exists(video_path):
                 actual_duration = len(video_frames) / fps
                 logger.info(f"Video generated and saved: {video_path}")
                 logger.info(f"Actual duration: {actual_duration:.2f} seconds")
                 return video_path
             else:
-                logger.error("Failed to save video")
+                logger.error("Failed to save video or video file doesn't exist")
                 return None
                 
         except Exception as e:
@@ -888,8 +893,8 @@ class StableDiffusionGenerator:
             for i, image_path in enumerate(image_paths):
                 logger.info(f"Processing image {i+1}/{len(image_paths)}: {image_path}")
                 
-                # Generate video frames for this image
-                video_frames = self.generate_video_from_image(
+                # Generate video from this image
+                video_path = self.generate_video_from_image(
                     image_path=image_path,
                     motion_strength=motion_strength,
                     num_frames=num_frames_per_image,
@@ -897,10 +902,10 @@ class StableDiffusionGenerator:
                     seed=i * 1000  # Use different seed for each image
                 )
                 
-                if video_frames:
+                if video_path and os.path.exists(video_path):
                     # Load the generated video frames
                     import cv2
-                    cap = cv2.VideoCapture(video_frames)
+                    cap = cv2.VideoCapture(video_path)
                     frames = []
                     while True:
                         ret, frame = cap.read()
