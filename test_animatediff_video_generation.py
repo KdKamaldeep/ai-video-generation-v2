@@ -97,8 +97,9 @@ def generate_long_video_with_chunks(generator, text: str, style: str, target_dur
             subprocess.run([
                 'ffmpeg', '-f', 'concat', '-safe', '0',
                 '-i', file_list_path,
+                '-framerate', str(fps),
                 '-c:v', 'libx264', '-preset', 'medium', '-crf', '23',
-                '-framerate', '8', '-pix_fmt', 'yuv420p',
+                '-pix_fmt', 'yuv420p',
                 '-vsync', 'cfr',
                 '-avoid_negative_ts', 'make_zero',
                 '-y', final_video_path
@@ -222,23 +223,49 @@ def generate_long_video_with_chunk_variations(generator, base_prompt: str, chunk
         
         # Concatenate chunks using FFmpeg
         try:
+            # Step 1: Normalize all input videos to 8 FPS first
+            normalized_video_paths = []
+            for i, chunk_path in enumerate(chunk_videos):
+                normalized_path = os.path.join(os.path.dirname(chunk_videos[0]), f"normalized_{i}.mp4")
+                logger.info(f"Normalizing chunk {i+1}/{len(chunk_videos)} to 8 FPS")
+                
+                # Re-encode each chunk to exactly 8 FPS with proper PTS
+                subprocess.run([
+                    'ffmpeg', '-i', chunk_path,
+                    '-c:v', 'libx264', '-preset', 'medium', '-crf', '23',
+                    '-r', '8', '-pix_fmt', 'yuv420p',
+                    '-vsync', 'cfr',  # Constant frame rate
+                    '-y', normalized_path
+                ], check=True, capture_output=True)
+                
+                normalized_video_paths.append(normalized_path)
+            
+            # Step 2: Create file list for video concatenation
+            with open(file_list_path, 'w') as f:
+                for video_path in normalized_video_paths:
+                    f.write(f"file '{os.path.abspath(video_path)}'\n")
+            
+            # Step 3: Combine videos with proper PTS handling
             subprocess.run([
                 'ffmpeg', '-f', 'concat', '-safe', '0',
                 '-i', file_list_path,
                 '-c:v', 'libx264', '-preset', 'medium', '-crf', '23',
-                '-framerate', '8', '-pix_fmt', 'yuv420p',
-                '-vsync', 'cfr',
-                '-avoid_negative_ts', 'make_zero',
+                '-r', '8', '-pix_fmt', 'yuv420p',
+                '-vsync', 'cfr',  # Constant frame rate
+                '-avoid_negative_ts', 'make_zero',  # Handle PTS properly
                 '-y', final_video_path
             ], check=True, capture_output=True)
             
             logger.info(f"✅ Long video created: {final_video_path}")
             
-            # Clean up chunk files and file list
+            # Clean up chunk files, normalized files, and file list
             os.remove(file_list_path)
             for chunk_path in chunk_videos:
                 if os.path.exists(chunk_path):
                     os.remove(chunk_path)
+            for normalized_path in normalized_video_paths:
+                if os.path.exists(normalized_path):
+                    os.remove(normalized_path)
             
             return final_video_path
             
