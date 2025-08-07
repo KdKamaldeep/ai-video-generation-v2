@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """
-Test script to verify the video merging fixes work correctly
+Test script to verify the video merging fixes work correctly and upload to S3
 """
 
 import os
 import subprocess
 import tempfile
 import logging
-from typing import List
+from typing import List, Optional
+import time
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -62,6 +63,37 @@ def get_video_info(video_path: str) -> dict:
         
     except Exception as e:
         logger.error(f"❌ Failed to get video info: {e}")
+        return None
+
+def upload_to_s3(video_path: str, folder: str = "video-merging-tests") -> Optional[str]:
+    """Upload video to S3 using the existing S3Uploader"""
+    try:
+        from utils.s3_uploader import S3Uploader
+        
+        # Initialize S3 uploader
+        s3_uploader = S3Uploader()
+        
+        # Generate S3 key with timestamp
+        timestamp = int(time.time())
+        filename = os.path.basename(video_path)
+        s3_key = f"{folder}/{timestamp}_{filename}"
+        
+        # Upload to S3
+        s3_url = s3_uploader.upload_video(
+            local_file_path=video_path,
+            s3_key=s3_key,
+            folder=folder
+        )
+        
+        if s3_url:
+            logger.info(f"✅ Video uploaded to S3: {s3_url}")
+            return s3_url
+        else:
+            logger.error("❌ Failed to upload video to S3")
+            return None
+            
+    except Exception as e:
+        logger.error(f"❌ S3 upload error: {e}")
         return None
 
 def test_old_merging_method(video_paths: List[str], output_path: str) -> bool:
@@ -148,7 +180,7 @@ def test_new_merging_method(video_paths: List[str], output_path: str) -> bool:
 def main():
     """Main test function"""
     logger.info("=" * 60)
-    logger.info("Testing Video Merging Fixes")
+    logger.info("Testing Video Merging Fixes with S3 Upload")
     logger.info("=" * 60)
     
     # Create temporary directory for test files
@@ -181,6 +213,7 @@ def main():
         old_output = os.path.join(temp_dir, "old_merged.mp4")
         old_success = test_old_merging_method(test_videos, old_output)
         
+        old_s3_url = None
         if old_success:
             old_info = get_video_info(old_output)
             if old_info:
@@ -196,11 +229,16 @@ def main():
                     logger.warning("⚠️ OLD method has significant duration/frame loss (expected)")
                 else:
                     logger.info("✅ OLD method worked correctly (unexpected)")
+            
+            # Upload old method video to S3
+            logger.info("Uploading OLD method video to S3...")
+            old_s3_url = upload_to_s3(old_output, "video-merging-tests/old-method")
         
         # Test new method
         new_output = os.path.join(temp_dir, "new_merged.mp4")
         new_success = test_new_merging_method(test_videos, new_output)
         
+        new_s3_url = None
         if new_success:
             new_info = get_video_info(new_output)
             if new_info:
@@ -216,6 +254,10 @@ def main():
                     logger.info("✅ NEW method preserved duration and frames correctly!")
                 else:
                     logger.error(f"❌ NEW method still has issues: duration diff={duration_diff:.2f}s, frame diff={frame_diff}")
+            
+            # Upload new method video to S3
+            logger.info("Uploading NEW method video to S3...")
+            new_s3_url = upload_to_s3(new_output, "video-merging-tests/new-method")
         
         # Summary
         logger.info("\n" + "=" * 60)
@@ -224,32 +266,48 @@ def main():
         logger.info(f"New method: {'✅ WORKED' if new_success else '❌ FAILED'}")
         logger.info("=" * 60)
         
-        # Return the final video paths
-        final_video_paths = {
-            'old_method': old_output if old_success else None,
-            'new_method': new_output if new_success else None,
-            'temp_dir': temp_dir
+        # Return the final video paths and S3 URLs
+        final_results = {
+            'old_method': {
+                'local_path': old_output if old_success else None,
+                's3_url': old_s3_url
+            },
+            'new_method': {
+                'local_path': new_output if new_success else None,
+                's3_url': new_s3_url
+            },
+            'temp_dir': temp_dir,
+            'test_videos': test_videos
         }
         
         logger.info("\n" + "=" * 60)
-        logger.info("FINAL VIDEO PATHS:")
+        logger.info("FINAL RESULTS:")
         if old_success:
             logger.info(f"OLD method video: {old_output}")
+            if old_s3_url:
+                logger.info(f"OLD method S3 URL: {old_s3_url}")
         if new_success:
             logger.info(f"NEW method video: {new_output}")
+            if new_s3_url:
+                logger.info(f"NEW method S3 URL: {new_s3_url}")
         logger.info(f"Temporary directory: {temp_dir}")
         logger.info("=" * 60)
         
-        return final_video_paths
+        return final_results
 
 if __name__ == "__main__":
     result = main()
     if result:
-        print(f"\n📁 Final video paths:")
-        if result['old_method']:
-            print(f"   Old method: {result['old_method']}")
-        if result['new_method']:
-            print(f"   New method: {result['new_method']}")
+        print(f"\n📁 Final Results:")
+        if result['old_method']['local_path']:
+            print(f"   Old method video: {result['old_method']['local_path']}")
+            if result['old_method']['s3_url']:
+                print(f"   Old method S3 URL: {result['old_method']['s3_url']}")
+        if result['new_method']['local_path']:
+            print(f"   New method video: {result['new_method']['local_path']}")
+            if result['new_method']['s3_url']:
+                print(f"   New method S3 URL: {result['new_method']['s3_url']}")
         print(f"   Temp directory: {result['temp_dir']}")
+        print(f"   Test videos: {len(result['test_videos'])} videos created")
     else:
         print("❌ Test failed") 
