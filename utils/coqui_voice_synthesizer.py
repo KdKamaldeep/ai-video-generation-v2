@@ -60,7 +60,8 @@ class CoquiVoiceSynthesizer:
             # Load the model to GPU (recommended for Bark)
             self.tts = TTS(
                 self.config.model_name,
-                gpu=self.config.gpu
+                gpu=self.config.gpu,
+                 kwargs={"weights_only": False}
             )
             
             logger.info("✅ Coqui TTS Bark model loaded successfully")
