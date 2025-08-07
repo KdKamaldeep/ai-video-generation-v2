@@ -1,35 +1,42 @@
+# Core dependencies
 fastapi==0.104.1
 uvicorn[standard]==0.24.0
 pydantic==2.5.0
 requests==2.31.0
-openai==1.3.7
-httpx==0.25.2
-# Video processing dependencies
-ffmpeg-python==0.2.0
-opencv-python>=4.8.0
-moviepy==1.0.3
-google-api-python-client==2.108.0
-google-auth==2.23.4
-google-auth-oauthlib==1.1.0
-google-auth-httplib2==0.1.1
 python-dotenv==1.0.0
 python-multipart==0.0.6
 aiofiles==23.2.1
-Pillow==10.1.0 
-shotstack_sdk==0.2.8
-boto3==1.34.0
-# Stable Diffusion dependencies
+
+# AI/ML dependencies (install these first)
 torch>=2.0.0
 torchvision>=0.15.0
-# NOTE: Do NOT use diffusers[animatediff] from PyPI - it no longer works
-# Install diffusers with AnimateDiff support from GitHub
-git+https://github.com/huggingface/diffusers.git@main#egg=diffusers[animatediff]
 transformers>=4.35.0
 accelerate>=0.24.0
-xformers>=0.0.22
-# Stable Video Diffusion dependencies
 safetensors>=0.4.0
-# Additional dependencies for AnimateDiff tests
 numpy>=1.24.0
-# Voice synthesis dependencies
+
+# AnimateDiff (CRITICAL - must be from GitHub)
+# NOTE: Do NOT use diffusers[animatediff] from PyPI - it no longer works
+git+https://github.com/huggingface/diffusers.git@main#egg=diffusers[animatediff]
+
+# Voice synthesis
 TTS>=0.22.0
+
+# Video processing
+ffmpeg-python==0.2.0
+opencv-python>=4.8.0
+moviepy==1.0.3
+Pillow==10.1.0
+
+# Cloud services
+boto3==1.34.0
+
+# Optional: Only install if you need these specific features
+# openai==1.3.7  # Only if using OpenAI for script generation
+# google-api-python-client==2.108.0  # Only if using Google APIs
+# google-auth==2.23.4  # Only if using Google APIs
+# google-auth-oauthlib==1.1.0  # Only if using Google APIs
+# google-auth-httplib2==0.1.1  # Only if using Google APIs
+# shotstack_sdk==0.2.8  # Only if using Shotstack
+# httpx==0.25.2  # Only if using async HTTP requests
+# xformers>=0.0.22  # Only for advanced PyTorch optimization
