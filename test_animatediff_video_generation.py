@@ -122,6 +122,124 @@ def generate_long_video_with_chunks(generator, text: str, style: str, target_dur
         logger.error(f"❌ Error generating long video: {e}")
         return None
 
+def generate_long_video_with_chunk_variations(generator, base_prompt: str, chunk_variations: List[str], 
+                                            style: str, target_duration: int = 10, fps: int = 8, 
+                                            width: int = 512, height: int = 768, 
+                                            seed: Optional[int] = None) -> Optional[str]:
+    """
+    Generate a longer video by creating multiple 24-frame chunks with different variations
+    
+    Args:
+        generator: AnimateDiff generator instance
+        base_prompt: Base text prompt for video generation
+        chunk_variations: List of variations to append to base prompt for each chunk
+        style: Video style
+        target_duration: Target duration in seconds
+        fps: Frames per second
+        width: Video width
+        height: Video height
+        seed: Random seed
+    
+    Returns:
+        Path to the final longer video, or None if failed
+    """
+    try:
+        max_frames = 24  # AnimateDiff limit
+        total_frames_needed = target_duration * fps
+        num_chunks = (total_frames_needed + max_frames - 1) // max_frames  # Ceiling division
+        
+        logger.info(f"Generating {target_duration}s video at {fps} FPS with {len(chunk_variations)} variations")
+        logger.info(f"Total frames needed: {total_frames_needed}")
+        logger.info(f"Will generate {num_chunks} chunks of {max_frames} frames each")
+        logger.info(f"Base prompt: {base_prompt}")
+        
+        chunk_videos = []
+        
+        for chunk_idx in range(num_chunks):
+            logger.info(f"Generating chunk {chunk_idx + 1}/{num_chunks}")
+            
+            # Select variation for this chunk (cycle through variations if more chunks than variations)
+            variation_idx = chunk_idx % len(chunk_variations)
+            variation = chunk_variations[variation_idx]
+            
+            # Combine base prompt with variation
+            full_prompt = f"{base_prompt}, {variation}"
+            logger.info(f"Chunk {chunk_idx + 1} prompt: {full_prompt}")
+            
+            # Generate chunk with slightly different seed for variety
+            chunk_seed = seed + chunk_idx if seed is not None else None
+            
+            chunk_path = generator.generate_animated_video_from_text(
+                text=full_prompt,
+                style=style,
+                width=width,
+                height=height,
+                num_frames=max_frames,
+                fps=fps,
+                motion_strength=0.8,
+                num_inference_steps=20,
+                guidance_scale=7.5,
+                seed=chunk_seed
+            )
+            
+            if chunk_path and os.path.exists(chunk_path):
+                chunk_videos.append(chunk_path)
+                logger.info(f"✅ Chunk {chunk_idx + 1} generated: {chunk_path}")
+            else:
+                logger.error(f"❌ Failed to generate chunk {chunk_idx + 1}")
+                return None
+        
+        if not chunk_videos:
+            logger.error("❌ No chunks were generated successfully")
+            return None
+        
+        # Create longer video by concatenating chunks
+        logger.info(f"Concatenating {len(chunk_videos)} chunks into longer video...")
+        
+        # Create file list for concatenation
+        timestamp = int(time.time())
+        file_list_path = os.path.join(os.path.dirname(chunk_videos[0]), f"chunk_list_{timestamp}.txt")
+        
+        with open(file_list_path, 'w') as f:
+            for chunk_path in chunk_videos:
+                f.write(f"file '{os.path.abspath(chunk_path)}'\n")
+        
+        # Generate final video path
+        final_video_path = os.path.join(
+            os.path.dirname(chunk_videos[0]), 
+            f"long_video_{timestamp}.mp4"
+        )
+        
+        # Concatenate chunks using FFmpeg
+        try:
+            subprocess.run([
+                'ffmpeg', '-f', 'concat', '-safe', '0',
+                '-i', file_list_path,
+                '-c:v', 'libx264', '-preset', 'medium', '-crf', '23',
+                '-r', '8', '-pix_fmt', 'yuv420p',
+                '-vsync', 'cfr',
+                '-avoid_negative_ts', 'make_zero',
+                '-y', final_video_path
+            ], check=True, capture_output=True)
+            
+            logger.info(f"✅ Long video created: {final_video_path}")
+            
+            # Clean up chunk files and file list
+            os.remove(file_list_path)
+            for chunk_path in chunk_videos:
+                if os.path.exists(chunk_path):
+                    os.remove(chunk_path)
+            
+            return final_video_path
+            
+        except subprocess.CalledProcessError as e:
+            logger.error(f"❌ FFmpeg concatenation failed: {e}")
+            return None
+            
+    except Exception as e:
+        logger.error(f"❌ Error generating long video: {e}")
+        return None
+
 def test_animatediff_generator():
     """Test the AnimateDiff generator with various scenarios and S3 upload"""
     try:
@@ -147,11 +265,18 @@ def test_animatediff_generator():
         s3_uploader = S3Uploader()
         logger.info("✅ S3 uploader initialized successfully")
         
-        # Test scenarios - now targeting 10+ seconds each
+        # Test scenarios - now targeting 10+ seconds each with chunk variations
         test_scenarios = [
             {
                 "name": "Basic Realistic Video",
-                "text": "A beautiful sunset over the ocean with gentle waves",
+                "base_prompt": "A beautiful sunset over the ocean with gentle waves",
+                "chunk_variations": [
+                    "as birds fly by slowly",
+                    "with waves getting slightly stronger",
+                    "as the sky turns purple and pink",
+                    "as the sun nears the horizon",
+                    "ending with the sky fading to dusk"
+                ],
                 "style": "realistic",
                 "target_duration": 10,  # 10 seconds
                 "fps": 8,
@@ -161,7 +286,14 @@ def test_animatediff_generator():
             },
             {
                 "name": "Cartoon Style Video",
-                "text": "A cute cartoon cat playing with a ball of yarn",
+                "base_prompt": "A cute cartoon cat playing with a ball of yarn",
+                "chunk_variations": [
+                    "the cat rolls on its back",
+                    "the cat bats the ball to the left",
+                    "the ball unravels slightly",
+                    "the cat jumps after it",
+                    "the cat lies down tired"
+                ],
                 "style": "cartoon",
                 "target_duration": 12,  # 12 seconds
                 "fps": 12,
@@ -171,7 +303,14 @@ def test_animatediff_generator():
             },
             {
                 "name": "Minimalist Style Video",
-                "text": "Simple geometric shapes moving in a minimalist design",
+                "base_prompt": "Simple geometric shapes moving in a minimalist design",
+                "chunk_variations": [
+                    "circles bouncing",
+                    "squares sliding in from the side",
+                    "triangles rotating slowly",
+                    "shapes fading in and out",
+                    "everything spinning in unison"
+                ],
                 "style": "minimalist",
                 "target_duration": 10,  # 10 seconds
                 "fps": 8,
@@ -181,7 +320,14 @@ def test_animatediff_generator():
             },
             {
                 "name": "Dramatic Style Video",
-                "text": "A dramatic storm with lightning and dark clouds",
+                "base_prompt": "A dramatic storm with lightning and dark clouds",
+                "chunk_variations": [
+                    "a lightning bolt strikes the ocean",
+                    "clouds swirl rapidly",
+                    "the camera zooms out from the storm",
+                    "another lightning bolt flashes",
+                    "rain begins to pour down"
+                ],
                 "style": "dramatic",
                 "target_duration": 10,  # 10 seconds
                 "fps": 10,
@@ -191,7 +337,14 @@ def test_animatediff_generator():
             },
             {
                 "name": "Funny Style Video",
-                "text": "A silly penguin slipping on ice and falling",
+                "base_prompt": "A silly penguin slipping on ice and falling",
+                "chunk_variations": [
+                    "the penguin walks cautiously",
+                    "it starts to slide faster",
+                    "it flails its wings",
+                    "it spins before falling",
+                    "it lies on the ice looking dizzy"
+                ],
                 "style": "funny",
                 "target_duration": 10,  # 10 seconds
                 "fps": 8,
@@ -211,10 +364,11 @@ def test_animatediff_generator():
             try:
                 start_time = time.time()
                 
-                # Generate longer video using chunks
-                video_path = generate_long_video_with_chunks(
+                # Generate longer video using chunks with variations
+                video_path = generate_long_video_with_chunk_variations(
                     generator=generator,
-                    text=scenario['text'],
+                    base_prompt=scenario['base_prompt'],
+                    chunk_variations=scenario['chunk_variations'],
                     style=scenario['style'],
                     target_duration=scenario['target_duration'],
                     fps=scenario['fps'],
@@ -371,9 +525,16 @@ def test_single_video_with_upload():
             memory_optimization=True
         )
         
-        # Test parameters
+        # Test parameters with chunk variations
         test_params = {
-            "text": "A majestic eagle soaring through the clouds at sunset",
+            "base_prompt": "A majestic eagle soaring through the clouds at sunset",
+            "chunk_variations": [
+                "the eagle glides smoothly",
+                "it catches an updraft and rises higher",
+                "it spots prey below and dives",
+                "it spreads its wings wide",
+                "it lands gracefully on a mountain peak"
+            ],
             "style": "realistic",
             "width": 512,
             "height": 768,
@@ -382,13 +543,14 @@ def test_single_video_with_upload():
             "seed": 42
         }
         
-        logger.info(f"Generating video for: {test_params['text']}")
+        logger.info(f"Generating video for: {test_params['base_prompt']}")
         
-        # Generate video using chunks
+        # Generate video using chunks with variations
         start_time = time.time()
-        video_path = generate_long_video_with_chunks(
+        video_path = generate_long_video_with_chunk_variations(
             generator=generator,
-            text=test_params['text'],
+            base_prompt=test_params['base_prompt'],
+            chunk_variations=test_params['chunk_variations'],
             style=test_params['style'],
             target_duration=test_params['target_duration'],
             fps=test_params['fps'],
