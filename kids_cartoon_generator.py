@@ -455,6 +455,7 @@ class KidsCartoonGenerator:
             file_list_path = os.path.join(self.output_dir, "video_list.txt")
             with open(file_list_path, 'w') as f:
                 for video_path in video_paths:
+                    logger.info(f"Adding video to file list: {os.path.abspath(video_path)}")    
                     f.write(f"file '{os.path.abspath(video_path)}'\n")
             
             # Combine videos with re-encoding for smooth transitions
