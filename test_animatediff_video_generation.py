@@ -1,17 +1,126 @@
 #!/usr/bin/env python3
 """
 Test script for AnimateDiff generate_animated_video_from_text function with S3 upload
+Handles 24-frame limit by generating multiple chunks and looping them
 """
 
 import os
 import logging
 import time
-from typing import Dict, List, Optional
+import subprocess
 import tempfile
+from typing import Dict, List, Optional
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+def generate_long_video_with_chunks(generator, text: str, style: str, target_duration: int = 10, 
+                                  fps: int = 8, width: int = 512, height: int = 768, 
+                                  seed: Optional[int] = None) -> Optional[str]:
+    """
+    Generate a longer video by creating multiple 24-frame chunks and looping them
+    
+    Args:
+        generator: AnimateDiff generator instance
+        text: Text prompt for video generation
+        style: Video style
+        target_duration: Target duration in seconds
+        fps: Frames per second
+        width: Video width
+        height: Video height
+        seed: Random seed
+    
+    Returns:
+        Path to the final longer video, or None if failed
+    """
+    try:
+        max_frames = 24  # AnimateDiff limit
+        total_frames_needed = target_duration * fps
+        num_chunks = (total_frames_needed + max_frames - 1) // max_frames  # Ceiling division
+        
+        logger.info(f"Generating {target_duration}s video at {fps} FPS")
+        logger.info(f"Total frames needed: {total_frames_needed}")
+        logger.info(f"Will generate {num_chunks} chunks of {max_frames} frames each")
+        
+        chunk_videos = []
+        
+        for chunk_idx in range(num_chunks):
+            logger.info(f"Generating chunk {chunk_idx + 1}/{num_chunks}")
+            
+            # Generate chunk with slightly different seed for variety
+            chunk_seed = seed + chunk_idx if seed is not None else None
+            
+            chunk_path = generator.generate_animated_video_from_text(
+                text=text,
+                style=style,
+                width=width,
+                height=height,
+                num_frames=max_frames,
+                fps=fps,
+                motion_strength=0.8,
+                num_inference_steps=20,
+                guidance_scale=7.5,
+                seed=chunk_seed
+            )
+            
+            if chunk_path and os.path.exists(chunk_path):
+                chunk_videos.append(chunk_path)
+                logger.info(f"✅ Chunk {chunk_idx + 1} generated: {chunk_path}")
+            else:
+                logger.error(f"❌ Failed to generate chunk {chunk_idx + 1}")
+                return None
+        
+        if not chunk_videos:
+            logger.error("❌ No chunks were generated successfully")
+            return None
+        
+        # Create longer video by concatenating chunks
+        logger.info(f"Concatenating {len(chunk_videos)} chunks into longer video...")
+        
+        # Create file list for concatenation
+        timestamp = int(time.time())
+        file_list_path = os.path.join(os.path.dirname(chunk_videos[0]), f"chunk_list_{timestamp}.txt")
+        
+        with open(file_list_path, 'w') as f:
+            for chunk_path in chunk_videos:
+                f.write(f"file '{os.path.abspath(chunk_path)}'\n")
+        
+        # Generate final video path
+        final_video_path = os.path.join(
+            os.path.dirname(chunk_videos[0]), 
+            f"long_video_{timestamp}.mp4"
+        )
+        
+        # Concatenate chunks using FFmpeg
+        try:
+            subprocess.run([
+                'ffmpeg', '-f', 'concat', '-safe', '0',
+                '-i', file_list_path,
+                '-c:v', 'libx264', '-preset', 'medium', '-crf', '23',
+                '-r', str(fps), '-pix_fmt', 'yuv420p',
+                '-vsync', 'cfr',
+                '-avoid_negative_ts', 'make_zero',
+                '-y', final_video_path
+            ], check=True, capture_output=True)
+            
+            logger.info(f"✅ Long video created: {final_video_path}")
+            
+            # Clean up chunk files and file list
+            os.remove(file_list_path)
+            for chunk_path in chunk_videos:
+                if os.path.exists(chunk_path):
+                    os.remove(chunk_path)
+            
+            return final_video_path
+            
+        except subprocess.CalledProcessError as e:
+            logger.error(f"❌ FFmpeg concatenation failed: {e}")
+            return None
+            
+    except Exception as e:
+        logger.error(f"❌ Error generating long video: {e}")
+        return None
 
 def test_animatediff_generator():
     """Test the AnimateDiff generator with various scenarios and S3 upload"""
@@ -38,13 +147,13 @@ def test_animatediff_generator():
         s3_uploader = S3Uploader()
         logger.info("✅ S3 uploader initialized successfully")
         
-        # Test scenarios
+        # Test scenarios - now targeting 10+ seconds each
         test_scenarios = [
             {
                 "name": "Basic Realistic Video",
                 "text": "A beautiful sunset over the ocean with gentle waves",
                 "style": "realistic",
-                "num_frames": 80,  # 10 seconds at 8 FPS
+                "target_duration": 10,  # 10 seconds
                 "fps": 8,
                 "width": 512,
                 "height": 768,
@@ -54,7 +163,7 @@ def test_animatediff_generator():
                 "name": "Cartoon Style Video",
                 "text": "A cute cartoon cat playing with a ball of yarn",
                 "style": "cartoon",
-                "num_frames": 120,  # 10 seconds at 12 FPS
+                "target_duration": 12,  # 12 seconds
                 "fps": 12,
                 "width": 512,
                 "height": 768,
@@ -64,7 +173,8 @@ def test_animatediff_generator():
                 "name": "Minimalist Style Video",
                 "text": "Simple geometric shapes moving in a minimalist design",
                 "style": "minimalist",
-                "num_frames": 80,  # 10 seconds at 8 FPS
+                "target_duration": 10,  # 10 seconds
+                "fps": 8,
                 "width": 512,
                 "height": 768,
                 "seed": 456
@@ -73,7 +183,7 @@ def test_animatediff_generator():
                 "name": "Dramatic Style Video",
                 "text": "A dramatic storm with lightning and dark clouds",
                 "style": "dramatic",
-                "num_frames": 100,  # 10 seconds at 10 FPS
+                "target_duration": 10,  # 10 seconds
                 "fps": 10,
                 "width": 512,
                 "height": 768,
@@ -83,7 +193,7 @@ def test_animatediff_generator():
                 "name": "Funny Style Video",
                 "text": "A silly penguin slipping on ice and falling",
                 "style": "funny",
-                "num_frames": 80,  # 10 seconds at 8 FPS
+                "target_duration": 10,  # 10 seconds
                 "fps": 8,
                 "width": 512,
                 "height": 768,
@@ -101,17 +211,15 @@ def test_animatediff_generator():
             try:
                 start_time = time.time()
                 
-                # Generate video
-                video_path = generator.generate_animated_video_from_text(
+                # Generate longer video using chunks
+                video_path = generate_long_video_with_chunks(
+                    generator=generator,
                     text=scenario['text'],
                     style=scenario['style'],
+                    target_duration=scenario['target_duration'],
+                    fps=scenario['fps'],
                     width=scenario['width'],
                     height=scenario['height'],
-                    num_frames=scenario['num_frames'],
-                    fps=scenario['fps'],
-                    motion_strength=0.8,
-                    num_inference_steps=20,
-                    guidance_scale=7.5,
                     seed=scenario['seed']
                 )
                 
@@ -153,6 +261,7 @@ def test_animatediff_generator():
                         logger.warning("   S3 upload failed")
                     logger.info(f"   Size: {file_size_mb:.2f} MB")
                     logger.info(f"   Time: {generation_time:.2f} seconds")
+                    logger.info(f"   Duration: {scenario['target_duration']} seconds")
                     
                 else:
                     result = {
@@ -268,19 +377,25 @@ def test_single_video_with_upload():
             "style": "realistic",
             "width": 512,
             "height": 768,
-            "num_frames": 80,  # 10 seconds at 8 FPS
+            "target_duration": 10,  # 10 seconds
             "fps": 8,
-            "motion_strength": 0.8,
-            "num_inference_steps": 20,
-            "guidance_scale": 7.5,
             "seed": 42
         }
         
         logger.info(f"Generating video for: {test_params['text']}")
         
-        # Generate video
+        # Generate video using chunks
         start_time = time.time()
-        video_path = generator.generate_animated_video_from_text(**test_params)
+        video_path = generate_long_video_with_chunks(
+            generator=generator,
+            text=test_params['text'],
+            style=test_params['style'],
+            target_duration=test_params['target_duration'],
+            fps=test_params['fps'],
+            width=test_params['width'],
+            height=test_params['height'],
+            seed=test_params['seed']
+        )
         generation_time = time.time() - start_time
         
         if video_path and os.path.exists(video_path):
@@ -320,8 +435,7 @@ def test_single_video_with_upload():
                 
                 logger.info(f"📊 Video Info:")
                 logger.info(f"   Size: {file_size_mb:.2f} MB")
-                logger.info(f"   Duration: ~{test_params['num_frames']/test_params['fps']:.1f} seconds")
-                logger.info(f"   Frames: {test_params['num_frames']}")
+                logger.info(f"   Duration: {test_params['target_duration']} seconds")
                 logger.info(f"   FPS: {test_params['fps']}")
                 
                 return result
