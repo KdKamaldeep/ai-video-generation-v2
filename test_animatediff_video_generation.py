@@ -158,13 +158,23 @@ def generate_long_video_with_chunk_variations(generator, base_prompt: str, chunk
         for chunk_idx in range(num_chunks):
             logger.info(f"Generating chunk {chunk_idx + 1}/{num_chunks}")
             
-            # Select variation for this chunk (cycle through variations if more chunks than variations)
+            # Each chunk represents a sequential part of the story
+            # Use variations in order to create proper story progression
             variation_idx = chunk_idx % len(chunk_variations)
             variation = chunk_variations[variation_idx]
             
-            # Combine base prompt with variation
-            full_prompt = f"{base_prompt}, {variation}"
-            logger.info(f"Chunk {chunk_idx + 1} prompt: {full_prompt}")
+            # Create story-based prompts that build sequentially
+            if chunk_idx == 0:
+                # First chunk: establish the scene
+                full_prompt = f"{base_prompt}, {variation}"
+            elif chunk_idx == num_chunks - 1:
+                # Last chunk: conclude the story
+                full_prompt = f"{base_prompt}, {variation}, final scene"
+            else:
+                # Middle chunks: continue the story progression
+                full_prompt = f"{base_prompt}, {variation}, story continues"
+            
+            logger.info(f"Story Chunk {chunk_idx + 1}/{num_chunks}: {full_prompt}")
             
             # Generate chunk with slightly different seed for variety
             chunk_seed = seed + chunk_idx if seed is not None else None
@@ -265,17 +275,17 @@ def test_animatediff_generator():
         s3_uploader = S3Uploader()
         logger.info("✅ S3 uploader initialized successfully")
         
-        # Test scenarios - now targeting 10+ seconds each with chunk variations
+        # Test scenarios - now targeting 10+ seconds each with story-based chunk variations
         test_scenarios = [
             {
-                "name": "Basic Realistic Video",
+                "name": "Sunset Story Video",
                 "base_prompt": "A beautiful sunset over the ocean with gentle waves",
                 "chunk_variations": [
-                    "as birds fly by slowly",
-                    "with waves getting slightly stronger",
-                    "as the sky turns purple and pink",
-                    "as the sun nears the horizon",
-                    "ending with the sky fading to dusk"
+                    "establishing the peaceful scene with seagulls flying overhead",
+                    "the waves gradually increase in intensity as the wind picks up",
+                    "the sky transforms from orange to deep purple and pink hues",
+                    "the sun sinks lower, casting long shadows across the water",
+                    "the scene fades into twilight as the first stars appear"
                 ],
                 "style": "realistic",
                 "target_duration": 10,  # 10 seconds
@@ -285,14 +295,14 @@ def test_animatediff_generator():
                 "seed": 42
             },
             {
-                "name": "Cartoon Style Video",
+                "name": "Cat Adventure Story",
                 "base_prompt": "A cute cartoon cat playing with a ball of yarn",
                 "chunk_variations": [
-                    "the cat rolls on its back",
-                    "the cat bats the ball to the left",
-                    "the ball unravels slightly",
-                    "the cat jumps after it",
-                    "the cat lies down tired"
+                    "the cat discovers the yarn and begins to play curiously",
+                    "the cat becomes more excited and starts batting the ball around",
+                    "the yarn unravels and creates a tangled mess on the floor",
+                    "the cat jumps and pounces, chasing the unraveling yarn",
+                    "the cat finally tires out and curls up next to the yarn"
                 ],
                 "style": "cartoon",
                 "target_duration": 12,  # 12 seconds
@@ -302,14 +312,14 @@ def test_animatediff_generator():
                 "seed": 123
             },
             {
-                "name": "Minimalist Style Video",
+                "name": "Geometric Dance Story",
                 "base_prompt": "Simple geometric shapes moving in a minimalist design",
                 "chunk_variations": [
-                    "circles bouncing",
-                    "squares sliding in from the side",
-                    "triangles rotating slowly",
-                    "shapes fading in and out",
-                    "everything spinning in unison"
+                    "circles appear and begin bouncing in a rhythmic pattern",
+                    "squares slide in from the sides and join the dance",
+                    "triangles rotate slowly, adding complexity to the movement",
+                    "shapes fade in and out, creating a mesmerizing effect",
+                    "all shapes unite in a final synchronized spinning motion"
                 ],
                 "style": "minimalist",
                 "target_duration": 10,  # 10 seconds
@@ -319,14 +329,14 @@ def test_animatediff_generator():
                 "seed": 456
             },
             {
-                "name": "Dramatic Style Video",
+                "name": "Storm Drama Story",
                 "base_prompt": "A dramatic storm with lightning and dark clouds",
                 "chunk_variations": [
-                    "a lightning bolt strikes the ocean",
-                    "clouds swirl rapidly",
-                    "the camera zooms out from the storm",
-                    "another lightning bolt flashes",
-                    "rain begins to pour down"
+                    "the storm begins with distant thunder and darkening skies",
+                    "lightning strikes dramatically, illuminating the turbulent ocean",
+                    "the camera pulls back to reveal the full scale of the storm",
+                    "multiple lightning bolts flash across the sky simultaneously",
+                    "the storm reaches its peak as heavy rain pours down"
                 ],
                 "style": "dramatic",
                 "target_duration": 10,  # 10 seconds
@@ -336,14 +346,14 @@ def test_animatediff_generator():
                 "seed": 789
             },
             {
-                "name": "Funny Style Video",
+                "name": "Penguin Comedy Story",
                 "base_prompt": "A silly penguin slipping on ice and falling",
                 "chunk_variations": [
-                    "the penguin walks cautiously",
-                    "it starts to slide faster",
-                    "it flails its wings",
-                    "it spins before falling",
-                    "it lies on the ice looking dizzy"
+                    "the penguin walks carefully across the slippery ice surface",
+                    "it loses its balance and starts sliding uncontrollably",
+                    "the penguin flaps its wings frantically trying to regain control",
+                    "it spins around in circles before finally losing balance",
+                    "the penguin lands on its back, looking dazed and confused"
                 ],
                 "style": "funny",
                 "target_duration": 10,  # 10 seconds
@@ -525,15 +535,15 @@ def test_single_video_with_upload():
             memory_optimization=True
         )
         
-        # Test parameters with chunk variations
+        # Test parameters with story-based chunk variations
         test_params = {
             "base_prompt": "A majestic eagle soaring through the clouds at sunset",
             "chunk_variations": [
-                "the eagle glides smoothly",
-                "it catches an updraft and rises higher",
-                "it spots prey below and dives",
-                "it spreads its wings wide",
-                "it lands gracefully on a mountain peak"
+                "the eagle begins its flight, gliding smoothly through the golden clouds",
+                "it catches a powerful updraft and soars higher into the sky",
+                "the eagle spots movement below and begins a dramatic hunting dive",
+                "it spreads its massive wings wide, showcasing its impressive wingspan",
+                "the eagle completes its journey by landing gracefully on a mountain peak"
             ],
             "style": "realistic",
             "width": 512,
