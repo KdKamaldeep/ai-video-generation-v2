@@ -542,16 +542,15 @@ class AnimateDiffGenerator:
             logger.info(f"++++++++++Saving video to: {final_path} with fps={fps}+++++++++++++++")
             # Encode video from image sequence with accurate FPS
             subprocess.run([
-                'ffmpeg', '-y',
-                '-framerate', str(fps),
-                '-i', os.path.join(frame_dir, 'frame_%04d.png'),
-                '-r', str(fps),
-                '-vsync', 'vfr',
-                '-force_key_frames', f"expr:gte(t,n_forced*{1/fps})",
-                '-pix_fmt', 'yuv420p',
-                '-c:v', 'libx264',
-                final_path
-            ], check=True)
+            'ffmpeg', '-y',
+            '-framerate', str(fps),
+            '-i', os.path.join(frame_dir, 'frame_%04d.png'),
+            '-r', str(fps),
+            '-pix_fmt', 'yuv420p',
+            '-c:v', 'libx264',
+            '-movflags', '+faststart',
+            final_path
+        ], check=True)
 
             # Save metadata
             metadata = {
