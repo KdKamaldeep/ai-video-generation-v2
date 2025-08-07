@@ -232,10 +232,7 @@ def generate_long_video_with_chunk_variations(generator, base_prompt: str, chunk
             subprocess.run([
                 'ffmpeg', '-f', 'concat', '-safe', '0',
                 '-i', file_list_path,
-                '-c:v', 'libx264', '-preset', 'medium', '-crf', '23',
-                '-r', '8', '-pix_fmt', 'yuv420p',
-                '-vsync', 'cfr',  # Constant frame rate
-                '-avoid_negative_ts', 'make_zero',  # Handle PTS properly
+                '-c', 'copy',
                 '-y', final_video_path
             ], check=True, capture_output=True)
             
