@@ -38,14 +38,14 @@ _patch_torch_load()
 
 class CoquiVoiceConfig(BaseModel):
     """Configuration for Coqui TTS voice synthesis"""
-    model_name: str = "tts_models/multilingual/multi-dataset/xtts_v2"  # Using XTTS v2 for better reliability
+    model_name: str = "tts_models/en/ljspeech/tacotron2-DDC"  # Using a stable, reliable model
     gpu: bool = True
     voice_dir: str = "tts_voices/"
     speaker: str = "random"
     text_temp: float = 0.7
     waveform_temp: float = 0.7
     progress_bar: bool = True
-    language: str = "en"  # Default language for XTTS v2
+    language: str = "en"  # Default language
 
 class CoquiVoiceSynthesizer:
     def __init__(self, config: Optional[CoquiVoiceConfig] = None):
@@ -77,8 +77,7 @@ class CoquiVoiceSynthesizer:
             
             # List of fallback models to try if the primary model fails
             fallback_models = [
-                self.config.model_name,  # XTTS v2
-                "tts_models/en/ljspeech/tacotron2-DDC",
+                self.config.model_name,  # tacotron2-DDC
                 "tts_models/en/ljspeech/fast_pitch",
                 "tts_models/en/vctk/vits",
                 "tts_models/multilingual/multi-dataset/your_tts"
@@ -156,32 +155,14 @@ class CoquiVoiceSynthesizer:
             # Generate audio using Coqui TTS
             logger.info(f"Generating audio with speaker: {current_speaker}")
             
-            # Handle different model APIs
-            if "xtts_v2" in self.config.model_name:
-                # XTTS v2 requires speaker_wav and language parameters
-                if voice_clone_audio and os.path.exists(voice_clone_audio):
-                    # Use the provided voice cloning audio
-                    speaker_wav = voice_clone_audio
-                else:
-                    # Create a default speaker audio or use a sample
-                    speaker_wav = self._get_default_speaker_audio()
-                
-                self.tts.tts_to_file(
-                    text=full_text,
-                    file_path=output_path,
-                    speaker_wav=speaker_wav,
-                    language=self.config.language,
-                    progress_bar=self.config.progress_bar
-                )
-            else:
-                # Standard TTS API for other models
-                self.tts.tts_to_file(
-                    text=full_text,
-                    file_path=output_path,
-                    voice_dir=self.config.voice_dir,
-                    speaker=current_speaker,
-                    progress_bar=self.config.progress_bar
-                )
+            # Standard TTS API
+            self.tts.tts_to_file(
+                text=full_text,
+                file_path=output_path,
+                voice_dir=self.config.voice_dir,
+                speaker=current_speaker,
+                progress_bar=self.config.progress_bar
+            )
             
             if os.path.exists(output_path):
                 logger.info(f"✅ Voice synthesized successfully: {output_path}")
@@ -295,40 +276,7 @@ class CoquiVoiceSynthesizer:
         logger.info("Silent audio file created successfully")
         return output_path
     
-    def _get_default_speaker_audio(self) -> str:
-        """Get or create a default speaker audio file for XTTS v2"""
-        default_speaker_path = os.path.join(self.config.voice_dir, "default_speaker.wav")
-        
-        if not os.path.exists(default_speaker_path):
-            logger.info("Creating default speaker audio for XTTS v2")
-            # Create a simple sine wave as default speaker audio
-            import wave
-            import struct
-            import math
-            
-            sample_rate = 22050
-            duration = 3.0  # 3 seconds
-            frequency = 440  # A4 note
-            amplitude = 0.3
-            
-            num_samples = int(sample_rate * duration)
-            
-            with wave.open(default_speaker_path, 'w') as wav_file:
-                wav_file.setnchannels(1)  # Mono
-                wav_file.setsampwidth(2)  # 16-bit
-                wav_file.setframerate(sample_rate)
-                
-                # Generate sine wave data
-                audio_data = []
-                for i in range(num_samples):
-                    sample = amplitude * math.sin(2 * math.pi * frequency * i / sample_rate)
-                    audio_data.append(struct.pack('<h', int(sample * 32767)))
-                
-                wav_file.writeframes(b''.join(audio_data))
-            
-            logger.info(f"Default speaker audio created: {default_speaker_path}")
-        
-        return default_speaker_path
+
     
     def cleanup(self):
         """Clean up resources"""
