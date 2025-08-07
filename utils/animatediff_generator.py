@@ -200,150 +200,59 @@ class AnimateDiffGenerator:
             if ANIMATEDIFF_AVAILABLE:
                 logger.info(f"Loading AnimateDiff pipeline with MotionAdapter: {self.motion_adapter_id}")
                 
-                # Official MotionAdapter checkpoints - using public motion adapter
-                motion_adapters = [
-                    "guoyww/animatediff-motion-adapter-v1-5",  # Public motion adapter
-                    "guoyww/animatediff-v1-5-2",  # Enhanced version (fallback)
-                    "guoyww/animatediff-v1-5",    # Stable version (fallback)
-                    "guoyww/animatediff-v1-4",    # Alternative (fallback)
-                ]
-                
-                for adapter_id in motion_adapters:
-                    try:
-                        logger.info(f"Trying MotionAdapter: {adapter_id}")
-                        
-                        # Load MotionAdapter or use motion_adapter_path
-                        if MotionAdapter is not None:
-                            try:
-                                motion_adapter = MotionAdapter.from_pretrained(adapter_id, cache_dir=self.cache_dir)
-                                logger.info(f"Motion adapter loaded: {adapter_id}")
-                                
-                                # Load AnimateDiff with MotionAdapter using the motion_adapter argument
-                                self.animatediff_pipeline = AnimateDiffPipeline.from_pretrained(
-                                    self.sd_model_id,
-                                    motion_adapter=motion_adapter,
-                                    torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
-                                    cache_dir=self.cache_dir,  # Cache the model
-                                    # Remove variant parameter as these models don't have fp16 variants
-                                )
-                            except Exception as e:
-                                logger.warning(f"Could not load motion adapter {adapter_id}: {e}")
-                                continue
-                        else:
-                            # Fallback to using motion_adapter_path
-                            logger.info(f"Using motion_adapter_path approach for: {adapter_id}")
-                            self.animatediff_pipeline = AnimateDiffPipeline.from_pretrained(
-                                self.sd_model_id,
-                                motion_adapter_path=adapter_id,
-                                torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
-                                cache_dir=self.cache_dir,  # Cache the model
-                                # Remove variant parameter as these models don't have fp16 variants
-                            )
-                        
-                        # Configure scheduler for AnimateDiff
-                        try:
-                            # Try to load scheduler from the motion adapter
-                            # Use DEISMultistepScheduler for final_sigmas_type support
-                            import json
-                            
-                            scheduler_config_path = os.path.join(self.cache_dir, "models--" + adapter_id.replace("/", "--"), "scheduler", "scheduler_config.json")
-                            
-                            # If config doesn't exist in cache, download it
-                            if not os.path.exists(scheduler_config_path):
-                                if hf_hub_download is not None:
-                                    scheduler_config_path = hf_hub_download(
-                                        repo_id=adapter_id,
-                                        filename="scheduler/scheduler_config.json",
-                                        cache_dir=self.cache_dir
-                                    )
-                                else:
-                                    raise ImportError("huggingface_hub not available for downloading scheduler config")
-                            
-                            with open(scheduler_config_path, 'r') as f:
-                                scheduler_config = json.load(f)
-                            
-                            # Add final_sigmas_type only for diffusers >= 0.33
-                            try:
-                                import diffusers
-                                diffusers_version = diffusers.__version__
-                                if diffusers_version >= "0.33.0":
-                                    scheduler_config["final_sigmas_type"] = "sigma_min"
-                                    logger.info(f"Added final_sigmas_type for diffusers {diffusers_version}")
-                                else:
-                                    logger.info(f"Skipping final_sigmas_type for diffusers {diffusers_version} (requires >= 0.33)")
-                            except (ImportError, AttributeError):
-                                logger.warning("Could not determine diffusers version, skipping final_sigmas_type")
-                            
-                            scheduler = DEISMultistepScheduler.from_config(scheduler_config)
-                            self.animatediff_pipeline.scheduler = scheduler
-                            logger.info("DEISMultistepScheduler configured for AnimateDiff")
-                        except Exception as e:
-                            logger.warning(f"Could not configure AnimateDiff scheduler from adapter: {e}")
-                            # Try with DDIMScheduler without final_sigmas_type if DEISMultistepScheduler fails
-                            try:
-                                # Try to load DDIM scheduler config
-                                try:
-                                    if hf_hub_download is not None:
-                                        ddim_config_path = hf_hub_download(
-                                            repo_id=adapter_id,
-                                            filename="scheduler/scheduler_config.json",
-                                            cache_dir=self.cache_dir
-                                        )
-                                        with open(ddim_config_path, 'r') as f:
-                                            ddim_config = json.load(f)
-                                    else:
-                                        raise ImportError("huggingface_hub not available")
-                                except:
-                                    # Use default DDIM config if loading fails
-                                    ddim_config = {
-                                        "beta_start": 0.00085,
-                                        "beta_end": 0.012,
-                                        "beta_schedule": "scaled_linear"
-                                    }
-                                
-                                scheduler = DDIMScheduler.from_config(ddim_config)
-                                self.animatediff_pipeline.scheduler = scheduler
-                                logger.info("DDIMScheduler configured with default settings")
-                            except Exception as e2:
-                                logger.warning(f"Could not configure AnimateDiff scheduler with default settings: {e2}")
-                                # Use the default scheduler that comes with the pipeline
-                                logger.info("Using default pipeline scheduler")
-                        
-                        # Move to device
-                        self.animatediff_pipeline = self.animatediff_pipeline.to(self.device)
-                        
-                        # Enable memory optimizations
-                        if self.memory_optimization:
-                            if hasattr(self.animatediff_pipeline, "enable_attention_slicing"):
-                                self.animatediff_pipeline.enable_attention_slicing()
-                            if hasattr(self.animatediff_pipeline, "enable_vae_slicing"):
-                                self.animatediff_pipeline.enable_vae_slicing()
-                        
-                        # Test the pipeline with minimal parameters
-                        logger.info("Testing AnimateDiff pipeline...")
-                        test_result = self.animatediff_pipeline(
-                            prompt="test",
-                            num_frames=2,
-                            num_inference_steps=5,
-                            decode_chunk_size=self.decode_chunk_size
-                        )
-                        
-                        logger.info(f"AnimateDiff pipeline loaded successfully with MotionAdapter: {adapter_id}")
-                        self.motion_adapter_id = adapter_id
-                        break
-                        
-                    except Exception as e:
-                        logger.warning(f"Failed to load MotionAdapter {adapter_id}: {e}")
-                        self.animatediff_pipeline = None
-                        continue
-                
-                if self.animatediff_pipeline is None:
-                    logger.warning("All MotionAdapters failed to load - motion generation will be disabled")
-                    logger.info("You can still use Stable Diffusion for image generation")
+                try:
+                    # Load the motion adapter directly (following your approach)
+                    logger.info(f"Loading MotionAdapter: {self.motion_adapter_id}")
+                    motion_adapter = MotionAdapter.from_pretrained(self.motion_adapter_id, cache_dir=self.cache_dir)
+                    logger.info(f"Motion adapter loaded: {self.motion_adapter_id}")
                     
-            else:
-                logger.warning("AnimateDiff not available - motion generation will be disabled")
-                logger.info("Install with: pip install diffusers[animatediff]")
+                    # Load AnimateDiff with MotionAdapter using the motion_adapter argument
+                    self.animatediff_pipeline = AnimateDiffPipeline.from_pretrained(
+                        self.sd_model_id,
+                        motion_adapter=motion_adapter,
+                        torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
+                        cache_dir=self.cache_dir
+                    )
+                    
+                    # Configure scheduler for AnimateDiff (following your approach)
+                    logger.info("Configuring DDIMScheduler for AnimateDiff")
+                    scheduler = DDIMScheduler.from_pretrained(
+                        self.sd_model_id, 
+                        subfolder="scheduler", 
+                        clip_sample=False, 
+                        timestep_spacing="linspace", 
+                        steps_offset=1
+                    )
+                    self.animatediff_pipeline.scheduler = scheduler
+                    logger.info("DDIMScheduler configured for AnimateDiff")
+                    
+                    # Move to device
+                    self.animatediff_pipeline = self.animatediff_pipeline.to(self.device)
+                    
+                    # Enable memory optimizations (following your approach)
+                    if self.memory_optimization:
+                        if hasattr(self.animatediff_pipeline, "enable_vae_slicing"):
+                            self.animatediff_pipeline.enable_vae_slicing()
+                        if hasattr(self.animatediff_pipeline, "enable_model_cpu_offload"):
+                            self.animatediff_pipeline.enable_model_cpu_offload()
+                    
+                    # Test the pipeline with minimal parameters
+                    logger.info("Testing AnimateDiff pipeline...")
+                    test_result = self.animatediff_pipeline(
+                        prompt="test",
+                        num_frames=2,
+                        num_inference_steps=5
+                    )
+                    
+                    logger.info(f"AnimateDiff pipeline loaded successfully with MotionAdapter: {self.motion_adapter_id}")
+                    
+                except Exception as e:
+                    logger.error(f"Failed to load AnimateDiff pipeline: {e}")
+                    self.animatediff_pipeline = None
+            
+            if self.animatediff_pipeline is None:
+                logger.warning("AnimateDiff pipeline failed to load - motion generation will be disabled")
+                logger.info("You can still use Stable Diffusion for image generation")
                 
         except Exception as e:
             logger.error(f"Error loading pipelines: {e}")
@@ -440,8 +349,7 @@ class AnimateDiffGenerator:
         num_inference_steps: int = 20,
         guidance_scale: float = 7.5,
         negative_prompt: str = None,
-        seed: Optional[int] = None,
-        decode_chunk_size: int = None
+        seed: Optional[int] = None
     ) -> Optional[str]:
         """
         Generate animated video from text using AnimateDiff (following official patterns)
@@ -477,10 +385,6 @@ class AnimateDiffGenerator:
                 num_frames = self.default_frames
             num_frames = self._validate_frame_count(num_frames)
             
-            # Set decode chunk size for memory optimization
-            if decode_chunk_size is None:
-                decode_chunk_size = self.decode_chunk_size
-            
             # Set random seed
             if seed is not None:
                 torch.manual_seed(seed)
@@ -495,9 +399,9 @@ class AnimateDiffGenerator:
                 negative_prompt = self._get_default_negative_prompt()
             
             logger.info(f"Generating animated video for: {text[:50]}...")
-            logger.info(f"Using {num_frames} frames with decode_chunk_size={decode_chunk_size}")
+            logger.info(f"Using {num_frames} frames")
             
-            # Generate animated video following official patterns
+            # Generate animated video following your approach
             result = self.animatediff_pipeline(
                 prompt=enhanced_prompt,
                 negative_prompt=negative_prompt,
@@ -506,9 +410,7 @@ class AnimateDiffGenerator:
                 num_frames=num_frames,
                 num_inference_steps=num_inference_steps,
                 guidance_scale=guidance_scale,
-                generator=torch.Generator(device=self.device).manual_seed(seed) if seed else None,
-                decode_chunk_size=decode_chunk_size,  # Official memory optimization
-                output_type="pil"  # Return PIL images for better compatibility
+                generator=torch.Generator(device=self.device).manual_seed(seed) if seed else None
             )
             
             # Get the video frames
@@ -705,8 +607,7 @@ def test_animatediff():
             fps=8,
             num_inference_steps=20,
             guidance_scale=7.5,
-            seed=42,
-            decode_chunk_size=8
+            seed=42
         )
         
         if video_path:
