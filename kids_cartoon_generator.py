@@ -269,7 +269,7 @@ class KidsCartoonGenerator:
                 target_duration = script["durations"][i] if i < len(script["durations"]) else 4
                 num_frames = max(16, int(target_duration * 8))  # At least 16 frames, scale with duration
                 
-                # Generate video with kid-appropriate settings
+                # Generate video with improved settings for better quality
                 video_path = generator.generate_animated_video_from_text(
                     text=prompt,
                     style="cartoon",  # Use cartoon style
@@ -277,9 +277,9 @@ class KidsCartoonGenerator:
                     height=768,  # Vertical for YouTube Shorts
                     num_frames=num_frames,  # Dynamic frame count based on duration
                     fps=8,
-                    motion_strength=0.6,  # Gentle motion for kids
-                    num_inference_steps=20,
-                    guidance_scale=7.5,
+                    motion_strength=0.8,  # Increased for smoother motion
+                    num_inference_steps=25,  # Increased for better quality
+                    guidance_scale=8.0,  # Increased for better prompt adherence
                     seed=42 + i,
                     decode_chunk_size=8
                 )
@@ -367,29 +367,14 @@ class KidsCartoonGenerator:
             timestamp = int(time.time())
             final_video_path = os.path.join(self.output_dir, f"kids_cartoon_{timestamp}.mp4")
             
-            # First, combine all video segments
-            combined_video_path = os.path.join(self.output_dir, f"combined_video_{timestamp}.mp4")
+            # First, combine all video segments with smooth transitions
+            combined_video_path = self._create_smooth_video_sequence(video_paths, timestamp)
             
-            # Combine videos using subprocess
-            if len(video_paths) > 1:
-                # Create file list for video concatenation
-                file_list_path = os.path.join(self.output_dir, "video_list.txt")
-                with open(file_list_path, 'w') as f:
-                    for video_path in video_paths:
-                        f.write(f"file '{os.path.abspath(video_path)}'\n")
-                
-                # Combine videos
-                subprocess.run([
-                    'ffmpeg', '-f', 'concat', '-safe', '0', 
-                    '-i', file_list_path, '-c', 'copy', combined_video_path
-                ], check=True, capture_output=True)
-                
-                # Clean up file list
-                os.remove(file_list_path)
-            else:
-                # Only one video, just copy it
-                import shutil
-                shutil.copy2(video_paths[0], combined_video_path)
+            if not combined_video_path:
+                logger.error("Failed to create smooth video sequence")
+                return None
+            
+
             
             # Add audio if available
             if audio_path and os.path.exists(audio_path):
@@ -406,10 +391,13 @@ class KidsCartoonGenerator:
                 except:
                     audio_duration = None
                 
-                # Combine video with audio
+                # Combine video with audio with proper synchronization
                 subprocess.run([
                     'ffmpeg', '-i', combined_video_path, '-i', audio_path,
-                    '-c:v', 'copy', '-c:a', 'aac', '-shortest', final_video_path
+                    '-c:v', 'libx264', '-preset', 'medium', '-crf', '23',
+                    '-c:a', 'aac', '-b:a', '128k',
+                    '-r', '8', '-pix_fmt', 'yuv420p',
+                    '-shortest', '-y', final_video_path
                 ], check=True, capture_output=True)
                 
                 # Clean up intermediate file
@@ -440,6 +428,57 @@ class KidsCartoonGenerator:
             logger.error(f"Subprocess video combination failed: {e}")
             raise
     
+    def _create_smooth_video_sequence(self, video_paths: List[str], timestamp: int) -> Optional[str]:
+        """Create a smooth video sequence with proper transitions"""
+        try:
+            import subprocess
+            
+            combined_video_path = os.path.join(self.output_dir, f"combined_video_{timestamp}.mp4")
+            
+            if len(video_paths) == 1:
+                # Single video, just re-encode for consistency
+                subprocess.run([
+                    'ffmpeg', '-i', video_paths[0],
+                    '-c:v', 'libx264', '-preset', 'medium', '-crf', '23',
+                    '-r', '8', '-pix_fmt', 'yuv420p',
+                    '-y', combined_video_path
+                ], check=True, capture_output=True)
+                return combined_video_path
+            
+            # Multiple videos - create smooth sequence
+            logger.info(f"Creating smooth video sequence from {len(video_paths)} segments")
+            
+            # Create file list for video concatenation
+            file_list_path = os.path.join(self.output_dir, "video_list.txt")
+            with open(file_list_path, 'w') as f:
+                for video_path in video_paths:
+                    f.write(f"file '{os.path.abspath(video_path)}'\n")
+            
+            # Combine videos with re-encoding for smooth transitions
+            # Use consistent frame rate, codec, and quality settings
+            subprocess.run([
+                'ffmpeg', '-f', 'concat', '-safe', '0', 
+                '-i', file_list_path, 
+                '-c:v', 'libx264', '-preset', 'medium', '-crf', '23',
+                '-r', '8', '-pix_fmt', 'yuv420p',  # Consistent 8 FPS
+                '-vf', 'fps=8:round=up',  # Ensure consistent frame rate
+                '-y', combined_video_path
+            ], check=True, capture_output=True)
+            
+            # Clean up file list
+            os.remove(file_list_path)
+            
+            if os.path.exists(combined_video_path):
+                logger.info("✅ Smooth video sequence created successfully")
+                return combined_video_path
+            else:
+                logger.error("❌ Failed to create smooth video sequence")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Error creating smooth video sequence: {e}")
+            return None
+    
     def _combine_video_with_ffmpeg_python(self, video_paths: List[str], audio_path: Optional[str], script: Dict) -> Optional[str]:
         """Combine videos and audio using ffmpeg-python"""
         try:
@@ -458,11 +497,13 @@ class KidsCartoonGenerator:
                 for video_path in video_paths:
                     f.write(f"file '{os.path.abspath(video_path)}'\n")
             
-            # Combine videos
+            # Combine videos with re-encoding for better compatibility
             (
                 ffmpeg
                 .input(file_list_path, f='concat', safe=0)
-                .output(combined_video_path, c='copy')
+                .output(combined_video_path, 
+                       vcodec='libx264', preset='medium', crf=23,
+                       r=8, pix_fmt='yuv420p')  # Consistent 8 FPS
                 .overwrite_output()
                 .run(quiet=True, capture_stdout=True, capture_stderr=True)
             )
@@ -489,8 +530,9 @@ class KidsCartoonGenerator:
                 (
                     ffmpeg
                     .output(video_stream, audio_stream, final_video_path, 
-                           vcodec='copy',
-                           acodec='aac',
+                           vcodec='libx264', preset='medium', crf=23,
+                           acodec='aac', ab='128k',
+                           r=8, pix_fmt='yuv420p',
                            shortest=None)  # Match audio duration
                     .overwrite_output()
                     .run(quiet=True, capture_stdout=True, capture_stderr=True)
@@ -545,11 +587,14 @@ class KidsCartoonGenerator:
                         for video_path in video_paths:
                             f.write(f"file '{os.path.abspath(video_path)}'\n")
                     
-                    # Combine videos
+                    # Combine videos with re-encoding
                     combined_video_path = os.path.join(self.output_dir, f"combined_fallback_{timestamp}.mp4")
                     subprocess.run([
                         'ffmpeg', '-f', 'concat', '-safe', '0', 
-                        '-i', file_list_path, '-c', 'copy', combined_video_path
+                        '-i', file_list_path, 
+                        '-c:v', 'libx264', '-preset', 'medium', '-crf', '23',
+                        '-r', '8', '-pix_fmt', 'yuv420p',
+                        '-y', combined_video_path
                     ], check=True, capture_output=True)
                     
                     # Clean up file list
@@ -562,7 +607,10 @@ class KidsCartoonGenerator:
                     logger.info("Adding audio using system ffmpeg")
                     subprocess.run([
                         'ffmpeg', '-i', combined_video_path, '-i', audio_path,
-                        '-c:v', 'copy', '-c:a', 'aac', '-shortest', final_video_path
+                        '-c:v', 'libx264', '-preset', 'medium', '-crf', '23',
+                        '-c:a', 'aac', '-b:a', '128k',
+                        '-r', '8', '-pix_fmt', 'yuv420p',
+                        '-shortest', '-y', final_video_path
                     ], check=True, capture_output=True)
                     
                     # Clean up intermediate file if it was created
