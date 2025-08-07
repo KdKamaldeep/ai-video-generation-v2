@@ -172,7 +172,7 @@ def generate_long_video_with_chunk_variations(generator, base_prompt: str, chunk
                 full_prompt = f"{base_prompt}, {variation}, final scene"
             else:
                 # Middle chunks: continue the story progression
-                full_prompt = f"{base_prompt}, {variation}, story continues"
+                full_prompt = f"{variation}, story continues"
             
             logger.info(f"Story Chunk {chunk_idx + 1}/{num_chunks}: {full_prompt}")
             
