@@ -348,7 +348,7 @@ def test_single_video_with_upload():
             }
 
         
-        logger.info(f"Generating video for: {test_params['text']}")
+        logger.info(f"Generating video for: {test_params['base_prompt']}")
         
         # Generate video using chunks
         start_time = time.time()
