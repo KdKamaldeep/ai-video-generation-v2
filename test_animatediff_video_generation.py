@@ -98,7 +98,7 @@ def generate_long_video_with_chunks(generator, text: str, style: str, target_dur
                 'ffmpeg', '-f', 'concat', '-safe', '0',
                 '-i', file_list_path,
                 '-c:v', 'libx264', '-preset', 'medium', '-crf', '23',
-                '-r', str(fps), '-pix_fmt', 'yuv420p',
+                '-r', '8', '-pix_fmt', 'yuv420p',
                 '-vsync', 'cfr',
                 '-avoid_negative_ts', 'make_zero',
                 '-y', final_video_path
