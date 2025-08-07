@@ -26,6 +26,12 @@ import json
 from dotenv import load_dotenv
 import traceback
 
+# Import huggingface_hub for downloading scheduler configs
+try:
+    from huggingface_hub import hf_hub_download
+except ImportError:
+    hf_hub_download = None
+
 # AnimateDiff imports
 try:
     from diffusers import AnimateDiffPipeline, DDIMScheduler, DEISMultistepScheduler
@@ -134,26 +140,45 @@ class AnimateDiffGenerator:
             
             # Configure scheduler for better quality
             try:
-                scheduler = DPMSolverMultistepScheduler.from_pretrained(
-                    self.sd_model_id,
-                    subfolder="scheduler",
-                    cache_dir=self.cache_dir,  # Cache the scheduler
-                    algorithm_type="dpmsolver++",  # Use dpmsolver++ instead of deis
-                    solver_type="midpoint",  # Use midpoint solver for better stability
-                    final_sigmas_type="sigma_min"
-                )
+                # Load scheduler config from the model's scheduler subfolder
+                import json
+                
+                scheduler_config_path = os.path.join(self.cache_dir, "models--" + self.sd_model_id.replace("/", "--"), "scheduler", "scheduler_config.json")
+                
+                # If config doesn't exist in cache, download it
+                if not os.path.exists(scheduler_config_path):
+                    if hf_hub_download is not None:
+                        scheduler_config_path = hf_hub_download(
+                            repo_id=self.sd_model_id,
+                            filename="scheduler/scheduler_config.json",
+                            cache_dir=self.cache_dir
+                        )
+                    else:
+                        raise ImportError("huggingface_hub not available for downloading scheduler config")
+                
+                with open(scheduler_config_path, 'r') as f:
+                    scheduler_config = json.load(f)
+                
+                # Add final_sigmas_type only for diffusers >= 0.33
+                try:
+                    import diffusers
+                    diffusers_version = diffusers.__version__
+                    if diffusers_version >= "0.33.0":
+                        scheduler_config["final_sigmas_type"] = "sigma_min"
+                        logger.info(f"Added final_sigmas_type for diffusers {diffusers_version}")
+                    else:
+                        logger.info(f"Skipping final_sigmas_type for diffusers {diffusers_version} (requires >= 0.33)")
+                except (ImportError, AttributeError):
+                    logger.warning("Could not determine diffusers version, skipping final_sigmas_type")
+                
+                scheduler = DPMSolverMultistepScheduler.from_config(scheduler_config)
                 self.sd_pipeline.scheduler = scheduler
                 logger.info("DPMSolverMultistepScheduler configured successfully")
             except Exception as e:
                 logger.warning(f"Could not configure scheduler: {e}")
                 # Try with default settings if custom configuration fails
                 try:
-                    scheduler = DPMSolverMultistepScheduler.from_pretrained(
-                        self.sd_model_id,
-                        subfolder="scheduler",
-                        cache_dir=self.cache_dir,
-                        final_sigmas_type="sigma_min"
-                    )
+                    scheduler = DPMSolverMultistepScheduler.from_config({})
                     self.sd_pipeline.scheduler = scheduler
                     logger.info("DPMSolverMultistepScheduler configured with default settings")
                 except Exception as e2:
@@ -219,27 +244,64 @@ class AnimateDiffGenerator:
                         try:
                             # Try to load scheduler from the motion adapter
                             # Use DEISMultistepScheduler for final_sigmas_type support
-                            scheduler = DEISMultistepScheduler.from_pretrained(
-                                adapter_id,
-                                subfolder="scheduler",
-                                cache_dir=self.cache_dir,  # Cache the scheduler
-                                final_sigmas_type="sigma_min"
-                            )
+                            import json
+                            
+                            scheduler_config_path = os.path.join(self.cache_dir, "models--" + adapter_id.replace("/", "--"), "scheduler", "scheduler_config.json")
+                            
+                            # If config doesn't exist in cache, download it
+                            if not os.path.exists(scheduler_config_path):
+                                if hf_hub_download is not None:
+                                    scheduler_config_path = hf_hub_download(
+                                        repo_id=adapter_id,
+                                        filename="scheduler/scheduler_config.json",
+                                        cache_dir=self.cache_dir
+                                    )
+                                else:
+                                    raise ImportError("huggingface_hub not available for downloading scheduler config")
+                            
+                            with open(scheduler_config_path, 'r') as f:
+                                scheduler_config = json.load(f)
+                            
+                            # Add final_sigmas_type only for diffusers >= 0.33
+                            try:
+                                import diffusers
+                                diffusers_version = diffusers.__version__
+                                if diffusers_version >= "0.33.0":
+                                    scheduler_config["final_sigmas_type"] = "sigma_min"
+                                    logger.info(f"Added final_sigmas_type for diffusers {diffusers_version}")
+                                else:
+                                    logger.info(f"Skipping final_sigmas_type for diffusers {diffusers_version} (requires >= 0.33)")
+                            except (ImportError, AttributeError):
+                                logger.warning("Could not determine diffusers version, skipping final_sigmas_type")
+                            
+                            scheduler = DEISMultistepScheduler.from_config(scheduler_config)
                             self.animatediff_pipeline.scheduler = scheduler
                             logger.info("DEISMultistepScheduler configured for AnimateDiff")
                         except Exception as e:
                             logger.warning(f"Could not configure AnimateDiff scheduler from adapter: {e}")
                             # Try with DDIMScheduler without final_sigmas_type if DEISMultistepScheduler fails
                             try:
-                                scheduler = DDIMScheduler.from_pretrained(
-                                    adapter_id,
-                                    subfolder="scheduler",
-                                    cache_dir=self.cache_dir,
-                                    beta_start=0.00085,  # Standard DDIM parameters
-                                    beta_end=0.012,
-                                    beta_schedule="scaled_linear"
-                                    # Removed final_sigmas_type as DDIMScheduler doesn't support it
-                                )
+                                # Try to load DDIM scheduler config
+                                try:
+                                    if hf_hub_download is not None:
+                                        ddim_config_path = hf_hub_download(
+                                            repo_id=adapter_id,
+                                            filename="scheduler/scheduler_config.json",
+                                            cache_dir=self.cache_dir
+                                        )
+                                        with open(ddim_config_path, 'r') as f:
+                                            ddim_config = json.load(f)
+                                    else:
+                                        raise ImportError("huggingface_hub not available")
+                                except:
+                                    # Use default DDIM config if loading fails
+                                    ddim_config = {
+                                        "beta_start": 0.00085,
+                                        "beta_end": 0.012,
+                                        "beta_schedule": "scaled_linear"
+                                    }
+                                
+                                scheduler = DDIMScheduler.from_config(ddim_config)
                                 self.animatediff_pipeline.scheduler = scheduler
                                 logger.info("DDIMScheduler configured with default settings")
                             except Exception as e2:
