@@ -179,8 +179,13 @@ class KidsCartoonGenerator:
                 "tags": script.tags
             }
             
+        except ImportError as e:
+            logger.warning(f"Script generator import failed: {e}")
+            logger.info("Using fallback script")
+            return self._generate_fallback_kids_script(story_type, duration_seconds)
         except Exception as e:
             logger.error(f"Script generation failed: {e}")
+            logger.info("Using fallback script")
             # Fallback script
             return self._generate_fallback_kids_script(story_type, duration_seconds)
     
@@ -320,7 +325,13 @@ class KidsCartoonGenerator:
     def _combine_video_and_audio(self, video_paths: List[str], audio_path: Optional[str], script: Dict) -> Optional[str]:
         """Combine videos and audio into final cartoon"""
         try:
-            import ffmpeg
+            # Try to import ffmpeg
+            try:
+                import ffmpeg
+                logger.info("Using ffmpeg-python for video processing")
+            except ImportError:
+                logger.warning("ffmpeg-python not available, trying alternative methods")
+                return self._combine_video_fallback(video_paths, audio_path, script)
             
             # Create output path
             timestamp = int(time.time())
@@ -372,6 +383,30 @@ class KidsCartoonGenerator:
             
         except Exception as e:
             logger.error(f"Video combination failed: {e}")
+            logger.info("Trying fallback method...")
+            return self._combine_video_fallback(video_paths, audio_path, script)
+    
+    def _combine_video_fallback(self, video_paths: List[str], audio_path: Optional[str], script: Dict) -> Optional[str]:
+        """Fallback method for video combination without ffmpeg-python"""
+        try:
+            logger.info("Using fallback video combination method")
+            
+            # Create output path
+            timestamp = int(time.time())
+            final_video_path = os.path.join(self.output_dir, f"kids_cartoon_fallback_{timestamp}.mp4")
+            
+            # Simple approach: just use the first video if available
+            if video_paths and os.path.exists(video_paths[0]):
+                import shutil
+                shutil.copy2(video_paths[0], final_video_path)
+                logger.info(f"Fallback: Using first video as final output")
+                return final_video_path
+            else:
+                logger.error("No valid videos found for fallback")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Fallback video combination failed: {e}")
             return None
     
     def _upload_to_s3(self, video_path: str, story_type: str) -> Optional[str]:
