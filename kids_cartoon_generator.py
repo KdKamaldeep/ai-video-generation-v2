@@ -208,8 +208,8 @@ class KidsCartoonGenerator:
                     "Peaceful blue sky with fluffy clouds",
                     "Rainbow with all the colors"
                 ],
-                "durations": [3, 4, 4, 4, 3],
-                "total_duration": 18,
+                "durations": [4, 5, 5, 5, 4],  # Increased durations for longer videos
+                "total_duration": 23,
                 "tags": ["educational", "colors", "kids", "learning"]
             },
             "animals": {
@@ -228,13 +228,21 @@ class KidsCartoonGenerator:
                     "Turtle walking slowly",
                     "Animals playing together"
                 ],
-                "durations": [3, 4, 4, 4, 3],
-                "total_duration": 18,
+                "durations": [4, 5, 5, 5, 4],  # Increased durations for longer videos
+                "total_duration": 23,
                 "tags": ["animals", "friendship", "kids", "nature"]
             }
         }
         
-        return fallback_scripts.get(story_type, fallback_scripts["educational"])
+        # If duration_seconds is specified, adjust the durations proportionally
+        script = fallback_scripts.get(story_type, fallback_scripts["educational"])
+        if duration_seconds and duration_seconds != script["total_duration"]:
+            # Scale durations proportionally
+            scale_factor = duration_seconds / script["total_duration"]
+            script["durations"] = [max(3, int(d * scale_factor)) for d in script["durations"]]
+            script["total_duration"] = sum(script["durations"])
+        
+        return script
     
     def _generate_cartoon_videos(self, script: Dict, cartoon_style: str) -> List[str]:
         """Generate cartoon videos for each scene"""
@@ -257,13 +265,17 @@ class KidsCartoonGenerator:
                 # Create kid-friendly prompt
                 prompt = f"{visual_suggestion}, {style_enhancement}, kid-friendly, safe for children, no scary elements"
                 
+                # Calculate frames based on narration duration (assuming 8 FPS)
+                target_duration = script["durations"][i] if i < len(script["durations"]) else 4
+                num_frames = max(16, int(target_duration * 8))  # At least 16 frames, scale with duration
+                
                 # Generate video with kid-appropriate settings
                 video_path = generator.generate_animated_video_from_text(
                     text=prompt,
                     style="cartoon",  # Use cartoon style
                     width=512,
                     height=768,  # Vertical for YouTube Shorts
-                    num_frames=16,
+                    num_frames=num_frames,  # Dynamic frame count based on duration
                     fps=8,
                     motion_strength=0.6,  # Gentle motion for kids
                     num_inference_steps=20,
@@ -274,7 +286,7 @@ class KidsCartoonGenerator:
                 
                 if video_path:
                     video_paths.append(video_path)
-                    logger.info(f"    ✅ Scene {i+1} generated")
+                    logger.info(f"    ✅ Scene {i+1} generated with {num_frames} frames ({target_duration}s)")
                 else:
                     logger.error(f"    ❌ Failed to generate scene {i+1}")
             
@@ -361,6 +373,16 @@ class KidsCartoonGenerator:
             
             # Add audio if available
             if audio_path and os.path.exists(audio_path):
+                logger.info(f"Adding audio to video: {os.path.basename(audio_path)}")
+                
+                # Get audio duration
+                try:
+                    audio_info = ffmpeg.probe(audio_path)
+                    audio_duration = float(audio_info['streams'][0]['duration'])
+                    logger.info(f"Audio duration: {audio_duration} seconds")
+                except:
+                    audio_duration = None
+                
                 # Combine video with audio
                 (
                     ffmpeg
@@ -376,7 +398,21 @@ class KidsCartoonGenerator:
                 
                 # Clean up intermediate file
                 os.remove(combined_video_path)
+                
+                # Verify the final video has audio
+                if os.path.exists(final_video_path):
+                    try:
+                        final_info = ffmpeg.probe(final_video_path)
+                        has_audio = any(stream['codec_type'] == 'audio' for stream in final_info['streams'])
+                        if has_audio:
+                            logger.info("✅ Final video includes audio track")
+                        else:
+                            logger.warning("⚠️ Final video does not have audio track")
+                    except:
+                        logger.warning("⚠️ Could not verify audio in final video")
+                
             else:
+                logger.warning("⚠️ No audio file provided or audio file not found")
                 # No audio, just rename the combined video
                 os.rename(combined_video_path, final_video_path)
             
@@ -396,11 +432,60 @@ class KidsCartoonGenerator:
             timestamp = int(time.time())
             final_video_path = os.path.join(self.output_dir, f"kids_cartoon_fallback_{timestamp}.mp4")
             
+            # Try to use system ffmpeg command if available
+            try:
+                import subprocess
+                
+                # Combine videos using system ffmpeg
+                if len(video_paths) > 1:
+                    # Create file list
+                    file_list_path = os.path.join(self.output_dir, "fallback_video_list.txt")
+                    with open(file_list_path, 'w') as f:
+                        for video_path in video_paths:
+                            f.write(f"file '{os.path.abspath(video_path)}'\n")
+                    
+                    # Combine videos
+                    combined_video_path = os.path.join(self.output_dir, f"combined_fallback_{timestamp}.mp4")
+                    subprocess.run([
+                        'ffmpeg', '-f', 'concat', '-safe', '0', 
+                        '-i', file_list_path, '-c', 'copy', combined_video_path
+                    ], check=True, capture_output=True)
+                    
+                    # Clean up file list
+                    os.remove(file_list_path)
+                else:
+                    combined_video_path = video_paths[0]
+                
+                # Add audio if available
+                if audio_path and os.path.exists(audio_path):
+                    logger.info("Adding audio using system ffmpeg")
+                    subprocess.run([
+                        'ffmpeg', '-i', combined_video_path, '-i', audio_path,
+                        '-c:v', 'copy', '-c:a', 'aac', '-shortest', final_video_path
+                    ], check=True, capture_output=True)
+                    
+                    # Clean up intermediate file if it was created
+                    if len(video_paths) > 1 and os.path.exists(combined_video_path):
+                        os.remove(combined_video_path)
+                else:
+                    # No audio, just copy the combined video
+                    import shutil
+                    shutil.copy2(combined_video_path, final_video_path)
+                    if len(video_paths) > 1 and os.path.exists(combined_video_path):
+                        os.remove(combined_video_path)
+                
+                logger.info(f"Fallback: Video created successfully with system ffmpeg")
+                return final_video_path
+                
+            except (subprocess.CalledProcessError, FileNotFoundError) as e:
+                logger.warning(f"System ffmpeg not available: {e}")
+                # Continue to simple fallback
+                
             # Simple approach: just use the first video if available
             if video_paths and os.path.exists(video_paths[0]):
                 import shutil
                 shutil.copy2(video_paths[0], final_video_path)
-                logger.info(f"Fallback: Using first video as final output")
+                logger.info(f"Fallback: Using first video as final output (no audio)")
                 return final_video_path
             else:
                 logger.error("No valid videos found for fallback")
