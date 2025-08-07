@@ -166,7 +166,7 @@ def main():
         
         if len(test_videos) != 5:
             logger.error("❌ Failed to create all test videos")
-            return
+            return None
         
         logger.info(f"✅ Created {len(test_videos)} test videos")
         
@@ -223,6 +223,33 @@ def main():
         logger.info(f"Old method: {'✅ WORKED' if old_success else '❌ FAILED'}")
         logger.info(f"New method: {'✅ WORKED' if new_success else '❌ FAILED'}")
         logger.info("=" * 60)
+        
+        # Return the final video paths
+        final_video_paths = {
+            'old_method': old_output if old_success else None,
+            'new_method': new_output if new_success else None,
+            'temp_dir': temp_dir
+        }
+        
+        logger.info("\n" + "=" * 60)
+        logger.info("FINAL VIDEO PATHS:")
+        if old_success:
+            logger.info(f"OLD method video: {old_output}")
+        if new_success:
+            logger.info(f"NEW method video: {new_output}")
+        logger.info(f"Temporary directory: {temp_dir}")
+        logger.info("=" * 60)
+        
+        return final_video_paths
 
 if __name__ == "__main__":
-    main() 
+    result = main()
+    if result:
+        print(f"\n📁 Final video paths:")
+        if result['old_method']:
+            print(f"   Old method: {result['old_method']}")
+        if result['new_method']:
+            print(f"   New method: {result['new_method']}")
+        print(f"   Temp directory: {result['temp_dir']}")
+    else:
+        print("❌ Test failed") 
