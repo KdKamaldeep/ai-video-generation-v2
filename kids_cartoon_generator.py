@@ -450,26 +450,47 @@ class KidsCartoonGenerator:
             # Multiple videos - create smooth sequence
             logger.info(f"Creating smooth video sequence from {len(video_paths)} segments")
             
-            # Create file list for video concatenation
+            # Step 1: Normalize all input videos to 8 FPS first
+            normalized_video_paths = []
+            for i, video_path in enumerate(video_paths):
+                normalized_path = os.path.join(self.output_dir, f"normalized_{i}_{timestamp}.mp4")
+                logger.info(f"Normalizing video {i+1}/{len(video_paths)} to 8 FPS: {os.path.basename(video_path)}")
+                
+                # Re-encode each video to exactly 8 FPS with proper PTS
+                subprocess.run([
+                    'ffmpeg', '-i', video_path,
+                    '-c:v', 'libx264', '-preset', 'medium', '-crf', '23',
+                    '-r', '8', '-pix_fmt', 'yuv420p',
+                    '-vsync', 'cfr',  # Constant frame rate
+                    '-y', normalized_path
+                ], check=True, capture_output=True)
+                
+                normalized_video_paths.append(normalized_path)
+            
+            # Step 2: Create file list for video concatenation
             file_list_path = os.path.join(self.output_dir, "video_list.txt")
             with open(file_list_path, 'w') as f:
-                for video_path in video_paths:
-                    logger.info(f"Adding video to file list: {os.path.abspath(video_path)}")    
+                for video_path in normalized_video_paths:
+                    logger.info(f"Adding normalized video to file list: {os.path.basename(video_path)}")    
                     f.write(f"file '{os.path.abspath(video_path)}'\n")
             
-            # Combine videos with re-encoding for smooth transitions
-            # Use consistent frame rate, codec, and quality settings
+            # Step 3: Combine videos with proper PTS handling
+            # Remove conflicting filters and use proper concat settings
             subprocess.run([
                 'ffmpeg', '-f', 'concat', '-safe', '0', 
                 '-i', file_list_path, 
                 '-c:v', 'libx264', '-preset', 'medium', '-crf', '23',
-                '-r', '8', '-pix_fmt', 'yuv420p',  # Consistent 8 FPS
-                '-vf', 'fps=8:round=up',  # Ensure consistent frame rate
+                '-r', '8', '-pix_fmt', 'yuv420p',
+                '-vsync', 'cfr',  # Constant frame rate
+                '-avoid_negative_ts', 'make_zero',  # Handle PTS properly
                 '-y', combined_video_path
             ], check=True, capture_output=True)
             
-            # Clean up file list
+            # Clean up temporary files
             os.remove(file_list_path)
+            for normalized_path in normalized_video_paths:
+                if os.path.exists(normalized_path):
+                    os.remove(normalized_path)
             
             if os.path.exists(combined_video_path):
                 logger.info("✅ Smooth video sequence created successfully")
@@ -494,25 +515,50 @@ class KidsCartoonGenerator:
             # First, combine all video segments
             combined_video_path = os.path.join(self.output_dir, f"combined_video_{timestamp}.mp4")
             
-            # Create file list for video concatenation
+            # Step 1: Normalize all input videos to 8 FPS first
+            normalized_video_paths = []
+            for i, video_path in enumerate(video_paths):
+                normalized_path = os.path.join(self.output_dir, f"normalized_{i}_{timestamp}.mp4")
+                logger.info(f"Normalizing video {i+1}/{len(video_paths)} to 8 FPS: {os.path.basename(video_path)}")
+                
+                # Re-encode each video to exactly 8 FPS with proper PTS
+                (
+                    ffmpeg
+                    .input(video_path)
+                    .output(normalized_path,
+                           vcodec='libx264', preset='medium', crf=23,
+                           r=8, pix_fmt='yuv420p',
+                           vsync='cfr')  # Constant frame rate
+                    .overwrite_output()
+                    .run(quiet=True, capture_stdout=True, capture_stderr=True)
+                )
+                
+                normalized_video_paths.append(normalized_path)
+            
+            # Step 2: Create file list for video concatenation
             file_list_path = os.path.join(self.output_dir, "video_list.txt")
             with open(file_list_path, 'w') as f:
-                for video_path in video_paths:
+                for video_path in normalized_video_paths:
                     f.write(f"file '{os.path.abspath(video_path)}'\n")
             
-            # Combine videos with re-encoding for better compatibility
+            # Step 3: Combine videos with proper PTS handling
             (
                 ffmpeg
                 .input(file_list_path, f='concat', safe=0)
                 .output(combined_video_path, 
                        vcodec='libx264', preset='medium', crf=23,
-                       r=8, pix_fmt='yuv420p')  # Consistent 8 FPS
+                       r=8, pix_fmt='yuv420p',
+                       vsync='cfr',  # Constant frame rate
+                       avoid_negative_ts='make_zero')  # Handle PTS properly
                 .overwrite_output()
                 .run(quiet=True, capture_stdout=True, capture_stderr=True)
             )
             
-            # Clean up file list
+            # Clean up temporary files
             os.remove(file_list_path)
+            for normalized_path in normalized_video_paths:
+                if os.path.exists(normalized_path):
+                    os.remove(normalized_path)
             
             # Add audio if available
             if audio_path and os.path.exists(audio_path):
@@ -536,6 +582,7 @@ class KidsCartoonGenerator:
                            vcodec='libx264', preset='medium', crf=23,
                            acodec='aac', ab='128k',
                            r=8, pix_fmt='yuv420p',
+                           vsync='cfr',  # Constant frame rate
                            shortest=None)  # Match audio duration
                     .overwrite_output()
                     .run(quiet=True, capture_stdout=True, capture_stderr=True)
@@ -556,18 +603,14 @@ class KidsCartoonGenerator:
                     except:
                         logger.warning("⚠️ Could not verify audio in final video")
                 
+                return final_video_path
             else:
-                logger.warning("⚠️ No audio file provided or audio file not found")
-                # No audio, just rename the combined video
-                os.rename(combined_video_path, final_video_path)
-            
-            return final_video_path if os.path.exists(final_video_path) else None
-            
+                # No audio, just return the combined video
+                return combined_video_path
+                
         except Exception as e:
-            logger.error(f"ffmpeg-python video combination failed: {e}")
-            import traceback
-            logger.error(f"Full error details: {traceback.format_exc()}")
-            raise
+            logger.error(f"Error combining video with ffmpeg-python: {e}")
+            return None
     
     def _combine_video_fallback(self, video_paths: List[str], audio_path: Optional[str], script: Dict) -> Optional[str]:
         """Fallback method for video combination without ffmpeg-python"""
