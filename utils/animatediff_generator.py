@@ -24,15 +24,18 @@ import numpy as np
 from PIL import Image
 import json
 from dotenv import load_dotenv
+import traceback
 
 # AnimateDiff imports
 try:
     from diffusers import AnimateDiffPipeline, DDIMScheduler
     from diffusers.utils import export_to_video
     ANIMATEDIFF_AVAILABLE = True
-except ImportError:
+    print("✅ AnimateDiffPipeline import succeeded.")
+except Exception as e:
     ANIMATEDIFF_AVAILABLE = False
-    logging.warning("AnimateDiff not available. Install with: pip install diffusers[animatediff]")
+    print("❌ AnimateDiff import failed.")
+    traceback.print_exc()
 
 load_dotenv()
 logger = logging.getLogger(__name__)
