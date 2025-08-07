@@ -29,3 +29,5 @@ opencv-python>=4.8.0
 safetensors>=0.4.0
 # Additional dependencies for AnimateDiff tests
 numpy>=1.24.0
+# Voice synthesis dependencies
+TTS>=0.22.0

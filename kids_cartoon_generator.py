@@ -282,16 +282,34 @@ class KidsCartoonGenerator:
     def _generate_voice_narration(self, script: Dict) -> Optional[str]:
         """Generate voice narration for the script"""
         try:
-            from utils.voice_synthesizer import VoiceSynthesizer
-            
-            synthesizer = VoiceSynthesizer()
+            from utils.unified_voice_synthesizer import UnifiedVoiceSynthesizer
             
             # Create output path
             timestamp = int(time.time())
             audio_path = os.path.join(self.output_dir, f"kids_narration_{timestamp}.wav")
             
+            # Initialize unified voice synthesizer
+            # You can switch between "coqui" and "elevenlabs"
+            voice_provider = os.getenv("VOICE_PROVIDER", "coqui")  # Default to Coqui TTS
+            
+            voice_config = {
+                "gpu": True,  # Use GPU for Coqui TTS
+                "speaker": "random",  # Random speaker for variety
+                "voice_dir": "bark_voices/",
+                "text_temp": 0.7,
+                "waveform_temp": 0.7
+            }
+            
+            synthesizer = UnifiedVoiceSynthesizer(
+                provider=voice_provider,
+                config=voice_config
+            )
+            
             # Generate voice for all narration lines
             audio_file = synthesizer.synthesize_voice(script["narration"], audio_path)
+            
+            # Cleanup
+            synthesizer.cleanup()
             
             return audio_file if os.path.exists(audio_file) else None
             
