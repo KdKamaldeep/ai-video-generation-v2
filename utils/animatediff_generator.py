@@ -25,6 +25,7 @@ from PIL import Image
 import json
 from dotenv import load_dotenv
 import traceback
+import subprocess
 
 # Import huggingface_hub for downloading scheduler configs
 try:
@@ -519,22 +520,31 @@ class AnimateDiffGenerator:
             return None
     
     def _save_video(self, video_frames: List[Image.Image], original_text: str, 
-                   seed: Optional[int] = None, fps: int = 8) -> Optional[str]:
-        """Save generated video with metadata"""
+                seed: Optional[int] = None, fps: int = 8) -> Optional[str]:
+        """Save generated video with metadata and enforce correct frame rate"""
         try:
             # Generate filename
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             unique_id = str(uuid.uuid4())[:8]
             safe_text = "".join(c for c in original_text[:50] if c.isalnum() or c in (' ', '-', '_')).rstrip()
             safe_text = safe_text.replace(' ', '_')
-            
-            filename = f"{timestamp}_{unique_id}_{safe_text}.mp4"
-            filepath = os.path.join(self.video_output_dir, filename)
-            
-            # Save video using diffusers export_to_video
-            export_to_video(video_frames, filepath, fps=fps)
-            
-            # Save metadata
+
+            raw_path = os.path.join(self.video_output_dir, f"{timestamp}_{unique_id}_{safe_text}_raw.mp4")
+            final_path = raw_path.replace("_raw.mp4", ".mp4")
+
+            # Step 1: Export raw video (potentially wrong FPS)
+            export_to_video(video_frames, raw_path, fps=fps)
+
+            # Step 2: Re-encode with correct FPS using FFmpeg
+            subprocess.run([
+                'ffmpeg', '-y', '-i', raw_path,
+                '-r', str(fps),
+                '-pix_fmt', 'yuv420p',
+                '-c:v', 'libx264',
+                final_path
+            ], check=True)
+
+            # Step 3: Save metadata
             metadata = {
                 "text": original_text,
                 "seed": seed,
@@ -544,13 +554,12 @@ class AnimateDiffGenerator:
                 "motion_adapter": self.motion_adapter_id,
                 "model": self.sd_model_id
             }
-            
-            metadata_path = filepath.replace(".mp4", "_metadata.json")
+            metadata_path = final_path.replace(".mp4", "_metadata.json")
             with open(metadata_path, 'w') as f:
                 json.dump(metadata, f, indent=2)
-            
-            return filepath
-            
+
+            return final_path
+
         except Exception as e:
             logger.error(f"Error saving video: {e}")
             return None
