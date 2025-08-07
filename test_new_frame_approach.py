@@ -96,7 +96,7 @@ def test_new_frame_approach():
             # Compile both frame directories into a single video
             final_output = os.path.join(os.path.dirname(frames_dir), "combined_test.mp4")
             success = generator.compile_multiple_frame_directories_to_video(
-                [frames_dir, frames_dir2], final_output, fps=8
+                [frames_dir], final_output, fps=8
             )
             
             if success and os.path.exists(final_output):
