@@ -152,7 +152,7 @@ class AnimateDiffRequest(BaseModel):
     style: str = "realistic"
     width: int = 512
     height: int = 768
-    num_frames: int = 20
+    num_frames: int = 24
     fps: int = 8
     motion_strength: float = 0.8
     num_inference_steps: int = 20
@@ -162,7 +162,7 @@ class AnimateDiffRequest(BaseModel):
 class AnimateDiffMotionRequest(BaseModel):
     image_path: str
     motion_type: str = "subtle"
-    num_frames: int = 20
+    num_frames: int = 24
     fps: int = 8
     motion_strength: float = 0.8
     num_inference_steps: int = 20
@@ -173,7 +173,7 @@ class AnimateDiffScriptRequest(BaseModel):
     script_lines: List[str]
     style: str = "realistic"
     motion_type: str = "subtle"
-    num_frames: int = 20
+    num_frames: int = 24
     fps: int = 8
     maintain_character_consistency: bool = True
     character_description: str = None
@@ -991,7 +991,7 @@ async def full_pipeline_with_images(request: FullPipelineWithImagesRequest = Ful
                     image_paths=successful_image_paths,
                     output_path=video_path,
                     motion_strength=1.0,  # Enhanced motion strength for more visible effects
-                    num_frames_per_segment=20,  # Use 20 frames (within 16-24 range)
+                    num_frames_per_segment=24,  # Use 24 frames (optimal for AnimateDiff compatibility)
                     video_fps=8,
                     fast_mode=True,  # Enable fast mode
                     timeout_seconds=60,  # 60 second timeout per segment

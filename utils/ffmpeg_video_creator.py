@@ -48,7 +48,7 @@ class FFmpegVideoCreator:
         narration_lines: List[dict], 
         output_path: str,
         motion_strength: float = 1.0,  # Enhanced motion strength
-        num_frames_per_segment: int = 12,  # Reduced for faster generation
+        num_frames_per_segment: int = 24,  # Use 24 frames for optimal AnimateDiff compatibility
         video_fps: int = 8
     ) -> str:
         """
@@ -738,7 +738,7 @@ class FFmpegVideoCreator:
         image_paths: List[str], 
         output_path: str,
         motion_strength: float = 1.0,  # Increased from 0.8 to 1.0 for more visible motion
-        num_frames_per_segment: int = 12,  # Reduced for faster generation
+                    num_frames_per_segment: int = 24,  # Use 24 frames for optimal AnimateDiff compatibility
         video_fps: int = 8,
         fast_mode: bool = True,  # Enable fast mode by default
         timeout_seconds: int = 60,  # Timeout for each motion video generation

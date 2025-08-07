@@ -270,7 +270,7 @@ class KidsCartoonGenerator:
                 
                 # Use higher FPS for smoother video and calculate frames accordingly
                 fps = 12  # Increased from 8 to 12 for smoother playback
-                num_frames = max(16, min(32, int(target_duration * fps)))  # Scale with duration, max 32 frames
+                num_frames = max(16, min(24, int(target_duration * fps)))  # Scale with duration, max 24 frames for AnimateDiff compatibility
                 
                 # Generate video with improved settings for better quality
                 video_path = generator.generate_animated_video_from_text(

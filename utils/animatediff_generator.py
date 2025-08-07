@@ -85,8 +85,8 @@ class AnimateDiffGenerator:
         
         # Frame limits for text-to-video generation (following official recommendations)
         self.min_frames = 16
-        self.max_frames = 32  # Most motion adapters support up to 32 frames
-        self.default_frames = 24  # Increased from 20
+        self.max_frames = 24  # AnimateDiff model/scheduler supports up to 24 frames
+        self.default_frames = 24  # Use 24 as default for optimal compatibility
         
         # Memory optimization settings
         self.decode_chunk_size = 8  # Official recommendation for memory efficiency
@@ -531,16 +531,16 @@ class AnimateDiffGenerator:
             return None
     
     def _validate_frame_count(self, num_frames: int) -> int:
-        """Validate frame count within acceptable range"""
+        """Validate frame count within acceptable range for AnimateDiff compatibility"""
         if num_frames < self.min_frames:
             logger.warning(f"Frame count {num_frames} too low, using minimum {self.min_frames}")
             return self.min_frames
         elif num_frames > self.max_frames:
-            logger.warning(f"Frame count {num_frames} too high, using maximum {self.max_frames}")
+            logger.warning(f"Frame count {num_frames} exceeds AnimateDiff model limit of {self.max_frames}, using maximum {self.max_frames}")
             return self.max_frames
         
-        # Ensure frame count is compatible with motion adapter (usually multiples of 8 or 16)
-        # Most AnimateDiff motion adapters work best with 16, 24, or 32 frames
+        # Ensure frame count is compatible with motion adapter (multiples of 8)
+        # AnimateDiff motion adapters work best with 16 or 24 frames
         if num_frames % 8 != 0:
             # Round to nearest multiple of 8
             adjusted_frames = round(num_frames / 8) * 8

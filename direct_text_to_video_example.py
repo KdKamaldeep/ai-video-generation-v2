@@ -56,7 +56,7 @@ def direct_text_to_video_example():
                 style="realistic",
                 width=512,
                 height=768,
-                num_frames=16,  # Official recommendation
+                num_frames=24,  # Use 24 frames for optimal AnimateDiff compatibility
                 fps=8,
                 num_inference_steps=20,
                 guidance_scale=7.5,
@@ -119,7 +119,7 @@ def compare_approaches():
         video_path = generator.generate_animated_video_from_text(
             text=test_prompt,
             style="realistic",
-            num_frames=16,
+            num_frames=24,
             fps=8,
             seed=42,
             decode_chunk_size=8
