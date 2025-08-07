@@ -45,7 +45,8 @@ class AnimateDiffGenerator:
                  sd_model_id: str = "SG161222/Realistic_Vision_V5.1_noVAE",
                  motion_adapter_id: str = "guoyww/animatediff-v1-5-2",
                  device: str = "auto",
-                 memory_optimization: bool = True):
+                 memory_optimization: bool = True,
+                 cache_dir: str = "models_cache"):
         """
         Initialize Enhanced AnimateDiff generator following official patterns
         
@@ -54,11 +55,13 @@ class AnimateDiffGenerator:
             motion_adapter_id: MotionAdapter checkpoint ID (from guoyww namespace)
             device: Device to run on ('auto', 'cuda', 'cpu')
             memory_optimization: Enable memory optimizations
+            cache_dir: Directory to cache downloaded models
         """
         self.sd_model_id = sd_model_id
         self.motion_adapter_id = motion_adapter_id
         self.device = self._get_device(device)
         self.memory_optimization = memory_optimization
+        self.cache_dir = cache_dir
         
         # Character consistency settings
         self.character_seed = None
@@ -78,6 +81,10 @@ class AnimateDiffGenerator:
         self.video_output_dir = "output/videos"
         os.makedirs(self.output_dir, exist_ok=True)
         os.makedirs(self.video_output_dir, exist_ok=True)
+        
+        # Create cache directory
+        os.makedirs(self.cache_dir, exist_ok=True)
+        logger.info(f"Using model cache directory: {os.path.abspath(self.cache_dir)}")
         
         # Initialize pipelines
         self.sd_pipeline = None
@@ -112,6 +119,7 @@ class AnimateDiffGenerator:
                 torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
                 safety_checker=None,
                 requires_safety_checker=False,
+                cache_dir=self.cache_dir,  # Cache the model
                 # Remove variant parameter to avoid fp16 issues
             )
             
@@ -119,7 +127,8 @@ class AnimateDiffGenerator:
             try:
                 scheduler = DPMSolverMultistepScheduler.from_pretrained(
                     self.sd_model_id,
-                    subfolder="scheduler"
+                    subfolder="scheduler",
+                    cache_dir=self.cache_dir  # Cache the scheduler
                 )
                 self.sd_pipeline.scheduler = scheduler
                 logger.info("DPMSolverMultistepScheduler configured successfully")
@@ -159,6 +168,7 @@ class AnimateDiffGenerator:
                             self.sd_model_id,
                             motion_adapter_path=adapter_id,
                             torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
+                            cache_dir=self.cache_dir,  # Cache the model
                             # Remove variant parameter as these models don't have fp16 variants
                         )
                         
@@ -166,7 +176,8 @@ class AnimateDiffGenerator:
                         try:
                             scheduler = DDIMScheduler.from_pretrained(
                                 adapter_id,
-                                subfolder="scheduler"
+                                subfolder="scheduler",
+                                cache_dir=self.cache_dir  # Cache the scheduler
                             )
                             self.animatediff_pipeline.scheduler = scheduler
                             logger.info("DDIMScheduler configured for AnimateDiff")
@@ -530,7 +541,8 @@ def test_animatediff():
         generator = AnimateDiffGenerator(
             sd_model_id="SG161222/Realistic_Vision_V5.1_noVAE",
             motion_adapter_id="guoyww/animatediff-v1-5-2",
-            memory_optimization=True
+            memory_optimization=True,
+            cache_dir="models_cache"  # Cache models locally
         )
         
         # Test image generation

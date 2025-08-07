@@ -244,7 +244,8 @@ class KidsCartoonGenerator:
             generator = AnimateDiffGenerator(
                 sd_model_id="SG161222/Realistic_Vision_V5.1_noVAE",
                 motion_adapter_id="guoyww/animatediff-v1-5-2",
-                memory_optimization=True
+                memory_optimization=True,
+                cache_dir="models_cache"  # Cache models locally
             )
             
             video_paths = []
