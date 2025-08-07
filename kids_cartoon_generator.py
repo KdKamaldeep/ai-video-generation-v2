@@ -338,13 +338,112 @@ class KidsCartoonGenerator:
     def _combine_video_and_audio(self, video_paths: List[str], audio_path: Optional[str], script: Dict) -> Optional[str]:
         """Combine videos and audio into final cartoon"""
         try:
-            # Try to import ffmpeg
+            # Try subprocess method first (more reliable)
+            logger.info("Using subprocess ffmpeg for video processing")
+            return self._combine_video_with_subprocess(video_paths, audio_path, script)
+            
+        except Exception as e:
+            logger.error(f"Subprocess method failed: {e}")
+            logger.info("Trying ffmpeg-python method...")
+            
+            # Fallback to ffmpeg-python
             try:
                 import ffmpeg
-                logger.info("Using ffmpeg-python for video processing")
+                return self._combine_video_with_ffmpeg_python(video_paths, audio_path, script)
             except ImportError:
-                logger.warning("ffmpeg-python not available, trying alternative methods")
+                logger.warning("ffmpeg-python not available")
                 return self._combine_video_fallback(video_paths, audio_path, script)
+            
+
+            
+            return self._combine_video_fallback(video_paths, audio_path, script)
+    
+    def _combine_video_with_subprocess(self, video_paths: List[str], audio_path: Optional[str], script: Dict) -> Optional[str]:
+        """Combine videos and audio using subprocess ffmpeg (more reliable)"""
+        try:
+            import subprocess
+            
+            # Create output path
+            timestamp = int(time.time())
+            final_video_path = os.path.join(self.output_dir, f"kids_cartoon_{timestamp}.mp4")
+            
+            # First, combine all video segments
+            combined_video_path = os.path.join(self.output_dir, f"combined_video_{timestamp}.mp4")
+            
+            # Combine videos using subprocess
+            if len(video_paths) > 1:
+                # Create file list for video concatenation
+                file_list_path = os.path.join(self.output_dir, "video_list.txt")
+                with open(file_list_path, 'w') as f:
+                    for video_path in video_paths:
+                        f.write(f"file '{os.path.abspath(video_path)}'\n")
+                
+                # Combine videos
+                subprocess.run([
+                    'ffmpeg', '-f', 'concat', '-safe', '0', 
+                    '-i', file_list_path, '-c', 'copy', combined_video_path
+                ], check=True, capture_output=True)
+                
+                # Clean up file list
+                os.remove(file_list_path)
+            else:
+                # Only one video, just copy it
+                import shutil
+                shutil.copy2(video_paths[0], combined_video_path)
+            
+            # Add audio if available
+            if audio_path and os.path.exists(audio_path):
+                logger.info(f"Adding audio to video: {os.path.basename(audio_path)}")
+                
+                # Get audio duration
+                try:
+                    result = subprocess.run([
+                        'ffprobe', '-v', 'quiet', '-show_entries', 'format=duration',
+                        '-of', 'csv=p=0', audio_path
+                    ], capture_output=True, text=True, check=True)
+                    audio_duration = float(result.stdout.strip())
+                    logger.info(f"Audio duration: {audio_duration} seconds")
+                except:
+                    audio_duration = None
+                
+                # Combine video with audio
+                subprocess.run([
+                    'ffmpeg', '-i', combined_video_path, '-i', audio_path,
+                    '-c:v', 'copy', '-c:a', 'aac', '-shortest', final_video_path
+                ], check=True, capture_output=True)
+                
+                # Clean up intermediate file
+                os.remove(combined_video_path)
+                
+                # Verify the final video has audio
+                if os.path.exists(final_video_path):
+                    try:
+                        result = subprocess.run([
+                            'ffprobe', '-v', 'quiet', '-show_streams', final_video_path
+                        ], capture_output=True, text=True, check=True)
+                        has_audio = 'codec_type=audio' in result.stdout
+                        if has_audio:
+                            logger.info("✅ Final video includes audio track")
+                        else:
+                            logger.warning("⚠️ Final video does not have audio track")
+                    except:
+                        logger.warning("⚠️ Could not verify audio in final video")
+                
+            else:
+                logger.warning("⚠️ No audio file provided or audio file not found")
+                # No audio, just rename the combined video
+                os.rename(combined_video_path, final_video_path)
+            
+            return final_video_path if os.path.exists(final_video_path) else None
+            
+        except Exception as e:
+            logger.error(f"Subprocess video combination failed: {e}")
+            raise
+    
+    def _combine_video_with_ffmpeg_python(self, video_paths: List[str], audio_path: Optional[str], script: Dict) -> Optional[str]:
+        """Combine videos and audio using ffmpeg-python"""
+        try:
+            import ffmpeg
             
             # Create output path
             timestamp = int(time.time())
@@ -365,7 +464,7 @@ class KidsCartoonGenerator:
                 .input(file_list_path, f='concat', safe=0)
                 .output(combined_video_path, c='copy')
                 .overwrite_output()
-                .run(quiet=True)
+                .run(quiet=True, capture_stdout=True, capture_stderr=True)
             )
             
             # Clean up file list
@@ -384,16 +483,17 @@ class KidsCartoonGenerator:
                     audio_duration = None
                 
                 # Combine video with audio
+                video_stream = ffmpeg.input(combined_video_path)
+                audio_stream = ffmpeg.input(audio_path)
+                
                 (
                     ffmpeg
-                    .input(combined_video_path)
-                    .input(audio_path)
-                    .output(final_video_path, 
+                    .output(video_stream, audio_stream, final_video_path, 
                            vcodec='copy',
                            acodec='aac',
                            shortest=None)  # Match audio duration
                     .overwrite_output()
-                    .run(quiet=True)
+                    .run(quiet=True, capture_stdout=True, capture_stderr=True)
                 )
                 
                 # Clean up intermediate file
@@ -419,9 +519,10 @@ class KidsCartoonGenerator:
             return final_video_path if os.path.exists(final_video_path) else None
             
         except Exception as e:
-            logger.error(f"Video combination failed: {e}")
-            logger.info("Trying fallback method...")
-            return self._combine_video_fallback(video_paths, audio_path, script)
+            logger.error(f"ffmpeg-python video combination failed: {e}")
+            import traceback
+            logger.error(f"Full error details: {traceback.format_exc()}")
+            raise
     
     def _combine_video_fallback(self, video_paths: List[str], audio_path: Optional[str], script: Dict) -> Optional[str]:
         """Fallback method for video combination without ffmpeg-python"""
