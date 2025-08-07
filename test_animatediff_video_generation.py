@@ -19,7 +19,7 @@ def generate_long_video_with_chunks(generator, text: str, style: str, target_dur
                                   fps: int = 8, width: int = 512, height: int = 768, 
                                   seed: Optional[int] = None) -> Optional[str]:
     """
-    Generate a longer video by creating multiple 24-frame chunks and looping them
+    Generate a longer video by creating multiple 24-frame chunks and compiling them
     
     Args:
         generator: AnimateDiff generator instance
@@ -43,7 +43,7 @@ def generate_long_video_with_chunks(generator, text: str, style: str, target_dur
         logger.info(f"Total frames needed: {total_frames_needed}")
         logger.info(f"Will generate {num_chunks} chunks of {max_frames} frames each")
         
-        chunk_videos = []
+        chunk_frame_directories = []
         
         for chunk_idx in range(num_chunks):
             logger.info(f"Generating chunk {chunk_idx + 1}/{num_chunks}")
@@ -51,7 +51,7 @@ def generate_long_video_with_chunks(generator, text: str, style: str, target_dur
             # Generate chunk with slightly different seed for variety
             chunk_seed = seed + chunk_idx if seed is not None else None
             
-            chunk_path = generator.generate_animated_video_from_text(
+            frames_dir = generator.generate_animated_video_from_text(
                 text=text,
                 style=style,
                 width=width,
@@ -64,63 +64,41 @@ def generate_long_video_with_chunks(generator, text: str, style: str, target_dur
                 seed=chunk_seed
             )
             
-            if chunk_path and os.path.exists(chunk_path):
-                chunk_videos.append(chunk_path)
-                logger.info(f"✅ Chunk {chunk_idx + 1} generated: {chunk_path}")
+            if frames_dir and os.path.exists(frames_dir):
+                chunk_frame_directories.append(frames_dir)
+                logger.info(f"✅ Chunk {chunk_idx + 1} frames saved: {frames_dir}")
             else:
                 logger.error(f"❌ Failed to generate chunk {chunk_idx + 1}")
                 return None
         
-        if not chunk_videos:
+        if not chunk_frame_directories:
             logger.error("❌ No chunks were generated successfully")
             return None
         
-        # Create longer video by concatenating chunks
-        logger.info(f"Concatenating {len(chunk_videos)} chunks into longer video...")
-        
-        # Create file list for concatenation
-        timestamp = int(time.time())
-        file_list_path = os.path.join(os.path.dirname(chunk_videos[0]), f"chunk_list_{timestamp}.txt")
-        
-        with open(file_list_path, 'w') as f:
-            for chunk_path in chunk_videos:
-                f.write(f"file '{os.path.abspath(chunk_path)}'\n")
+        # Create longer video by compiling all frame directories
+        logger.info(f"Compiling {len(chunk_frame_directories)} frame directories into longer video...")
         
         # Generate final video path
+        timestamp = int(time.time())
         final_video_path = os.path.join(
-            os.path.dirname(chunk_videos[0]), 
+            os.path.dirname(chunk_frame_directories[0]), 
             f"long_video_{timestamp}.mp4"
         )
         
-        # Concatenate chunks using FFmpeg
-        try:
-            subprocess.run([
-                'ffmpeg', '-f', 'concat', '-safe', '0',
-                '-i', file_list_path,
-                '-framerate', str(fps),
-                '-c:v', 'libx264', '-preset', 'medium', '-crf', '23',
-                '-pix_fmt', 'yuv420p',
-                '-vsync', 'cfr',
-                '-avoid_negative_ts', 'make_zero',
-                '-y', final_video_path
-            ], check=True, capture_output=True)
-            
-            logger.info(f"✅ Long video created: {final_video_path}")
-            
-            # Clean up chunk files and file list
-            os.remove(file_list_path)
-            for chunk_path in chunk_videos:
-                if os.path.exists(chunk_path):
-                    os.remove(chunk_path)
-            
+                # Compile all frame directories into a single video
+        success = generator.compile_multiple_frame_directories_to_video(
+            chunk_frame_directories, final_video_path, fps
+        )
+        
+        if success:
+            logger.info(f"✅ Successfully created long video: {final_video_path}")
             return final_video_path
-            
-        except subprocess.CalledProcessError as e:
-            logger.error(f"❌ FFmpeg concatenation failed: {e}")
+        else:
+            logger.error("❌ Failed to compile frame directories into video")
             return None
             
     except Exception as e:
-        logger.error(f"❌ Error generating long video: {e}")
+        logger.error(f"Error generating long video with chunks: {e}")
         return None
 
 def generate_long_video_with_chunk_variations(generator, base_prompt: str, chunk_variations: List[str], 
@@ -154,7 +132,7 @@ def generate_long_video_with_chunk_variations(generator, base_prompt: str, chunk
         logger.info(f"Will generate {num_chunks} chunks of {max_frames} frames each")
         logger.info(f"Base prompt: {base_prompt}")
         
-        chunk_videos = []
+        chunk_frame_directories = []
         
         for chunk_idx in range(num_chunks):
             logger.info(f"Generating chunk {chunk_idx + 1}/{num_chunks}")
@@ -180,7 +158,7 @@ def generate_long_video_with_chunk_variations(generator, base_prompt: str, chunk
             # Generate chunk with slightly different seed for variety
             chunk_seed = seed + chunk_idx if seed is not None else None
             
-            chunk_path = generator.generate_animated_video_from_text(
+            frames_dir = generator.generate_animated_video_from_text(
                 text=full_prompt,
                 style=style,
                 width=width,
@@ -193,68 +171,41 @@ def generate_long_video_with_chunk_variations(generator, base_prompt: str, chunk
                 seed=chunk_seed
             )
             
-            if chunk_path and os.path.exists(chunk_path):
-                chunk_videos.append(chunk_path)
-                logger.info(f"✅ Chunk {chunk_idx + 1} generated: {chunk_path}")
+            if frames_dir and os.path.exists(frames_dir):
+                chunk_frame_directories.append(frames_dir)
+                logger.info(f"✅ Chunk {chunk_idx + 1} frames saved: {frames_dir}")
             else:
                 logger.error(f"❌ Failed to generate chunk {chunk_idx + 1}")
                 return None
         
-        if not chunk_videos:
+        if not chunk_frame_directories:
             logger.error("❌ No chunks were generated successfully")
             return None
         
-        # Create longer video by concatenating chunks
-        logger.info(f"Concatenating {len(chunk_videos)} chunks into longer video...")
-        
-        # Create file list for concatenation
-        timestamp = int(time.time())
-        file_list_path = os.path.join(os.path.dirname(chunk_videos[0]), f"chunk_list_{timestamp}.txt")
-        
-        with open(file_list_path, 'w') as f:
-            for chunk_path in chunk_videos:
-                f.write(f"file '{os.path.abspath(chunk_path)}'\n")
+        # Create longer video by compiling all frame directories
+        logger.info(f"Compiling {len(chunk_frame_directories)} frame directories into longer video...")
         
         # Generate final video path
+        timestamp = int(time.time())
         final_video_path = os.path.join(
-            os.path.dirname(chunk_videos[0]), 
+            os.path.dirname(chunk_frame_directories[0]), 
             f"long_video_{timestamp}.mp4"
         )
         
-        # Concatenate chunks using FFmpeg
-        try:
-            # Create file list for video concatenation
-            with open(file_list_path, 'w') as f:
-                for video_path in chunk_videos:
-                    f.write(f"file '{os.path.abspath(video_path)}'\n")
-            
-            # Combine videos with proper PTS handling
-            subprocess.run([
-                'ffmpeg', '-f', 'concat', '-safe', '0',
-                '-i', file_list_path,
-                '-c:v', 'libx264', '-preset', 'medium', '-crf', '23',
-                '-r', '8', '-pix_fmt', 'yuv420p',
-                '-vsync', 'cfr',  # Constant frame rate
-                '-avoid_negative_ts', 'make_zero',  # Handle PTS properly
-                '-y', final_video_path
-            ], check=True, capture_output=True)
-            
-            logger.info(f"✅ Long video created: {final_video_path}")
-            
-            # Clean up chunk files and file list
-            os.remove(file_list_path)
-            for chunk_path in chunk_videos:
-                if os.path.exists(chunk_path):
-                    os.remove(chunk_path)
-            
+        # Compile all frame directories into a single video
+        success = generator.compile_multiple_frame_directories_to_video(
+            chunk_frame_directories, final_video_path, fps
+        )
+        
+        if success:
+            logger.info(f"✅ Successfully created long video: {final_video_path}")
             return final_video_path
-            
-        except subprocess.CalledProcessError as e:
-            logger.error(f"❌ FFmpeg concatenation failed: {e}")
+        else:
+            logger.error("❌ Failed to compile frame directories into video")
             return None
             
     except Exception as e:
-        logger.error(f"❌ Error generating long video: {e}")
+        logger.error(f"Error generating long video with chunk variations: {e}")
         return None
 
 def test_animatediff_generator():

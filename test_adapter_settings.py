@@ -88,8 +88,8 @@ def test_our_implementation():
             memory_optimization=True
         )
         
-        # Test video generation
-        video_path = generator.generate_animated_video_from_text(
+        # Test frame generation
+        frames_dir = generator.generate_animated_video_from_text(
             text="masterpiece, bestquality, highlydetailed, ultradetailed, sunset, orange sky, warm lighting, fishing boats, ocean waves seagulls, rippling water, wharf, silhouette, serene atmosphere, dusk, evening glow, golden hour, coastal landscape, seaside scenery",
             style="realistic",
             num_frames=16,
@@ -99,11 +99,11 @@ def test_our_implementation():
             seed=42
         )
         
-        if video_path:
-            logger.info(f"✅ Our implementation successful! Video saved: {video_path}")
+        if frames_dir and os.path.exists(frames_dir):
+            logger.info(f"✅ Our implementation successful! Frames saved: {frames_dir}")
             return True
         else:
-            logger.error("❌ Our implementation failed to generate video")
+            logger.error("❌ Our implementation failed to generate frames")
             return False
             
     except Exception as e:

@@ -19,7 +19,6 @@ import uuid
 from datetime import datetime
 from typing import List, Optional, Dict, Any, Union
 from diffusers import StableDiffusionPipeline, DPMSolverMultistepScheduler
-from diffusers.utils import export_to_video
 import numpy as np
 from PIL import Image
 import json
@@ -44,7 +43,6 @@ try:
         except ImportError:
             # If MotionAdapter is not available, we'll use the motion_adapter_path approach
             MotionAdapter = None
-    from diffusers.utils import export_to_video
     ANIMATEDIFF_AVAILABLE = True
     print("✅ AnimateDiffPipeline import succeeded.")
 except Exception as e:
@@ -352,7 +350,7 @@ class AnimateDiffGenerator:
         seed: Optional[int] = None
     ) -> Optional[str]:
         """
-        Generate animated video from text using AnimateDiff (following official patterns)
+        Generate animated frames from text using AnimateDiff (following official patterns)
         
         Args:
             text: Text description for video generation
@@ -369,7 +367,7 @@ class AnimateDiffGenerator:
             decode_chunk_size: Number of frames to decode at a time (memory optimization)
             
         Returns:
-            Local path to the generated video, or None if failed
+            Local path to the directory containing generated frames, or None if failed
         """
         if not ANIMATEDIFF_AVAILABLE or self.animatediff_pipeline is None:
             logger.error("AnimateDiff not available. Cannot generate animated video.")
@@ -418,14 +416,14 @@ class AnimateDiffGenerator:
             
             logger.info(f"Generated {len(video_frames)} video frames")
             
-            # Save video
-            video_path = self._save_video(video_frames, text, seed, fps)
+            # Save frames
+            frames_dir = self._save_frames(video_frames, text, seed, fps)
             
-            if video_path:
-                logger.info(f"Animated video generated and saved: {video_path}")
-                return video_path
+            if frames_dir:
+                logger.info(f"Animated frames generated and saved: {frames_dir}")
+                return frames_dir
             else:
-                logger.error("Failed to save animated video")
+                logger.error("Failed to save animated frames")
                 return None
                 
         except Exception as e:
@@ -518,9 +516,9 @@ class AnimateDiffGenerator:
             logger.error(f"Error saving image: {e}")
             return None
     
-    def _save_video(self, video_frames: List[Image.Image], original_text: str, 
+    def _save_frames(self, video_frames: List[Image.Image], original_text: str, 
                    seed: Optional[int] = None, fps: int = 8) -> Optional[str]:
-        """Save generated video with metadata"""
+        """Save generated video frames as individual PNG files and return frames directory path"""
         try:
             # Generate filename
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -528,11 +526,19 @@ class AnimateDiffGenerator:
             safe_text = "".join(c for c in original_text[:50] if c.isalnum() or c in (' ', '-', '_')).rstrip()
             safe_text = safe_text.replace(' ', '_')
             
-            filename = f"{timestamp}_{unique_id}_{safe_text}.mp4"
-            filepath = os.path.join(self.video_output_dir, filename)
+            # Create temporary directory for frames
+            frames_dir = os.path.join(self.video_output_dir, f"frames_{timestamp}_{unique_id}")
+            os.makedirs(frames_dir, exist_ok=True)
             
-            # Save video using diffusers export_to_video
-            export_to_video(video_frames, filepath, fps=fps)
+            # Save individual frames as PNG files
+            frame_paths = []
+            for i, frame in enumerate(video_frames):
+                frame_filename = f"frame_{i+1:04d}.png"
+                frame_path = os.path.join(frames_dir, frame_filename)
+                frame.save(frame_path, "PNG")
+                frame_paths.append(frame_path)
+            
+            logger.info(f"Saved {len(frame_paths)} frames to {frames_dir}")
             
             # Save metadata
             metadata = {
@@ -542,18 +548,106 @@ class AnimateDiffGenerator:
                 "fps": fps,
                 "frames": len(video_frames),
                 "motion_adapter": self.motion_adapter_id,
-                "model": self.sd_model_id
+                "model": self.sd_model_id,
+                "frames_directory": frames_dir
             }
             
-            metadata_path = filepath.replace(".mp4", "_metadata.json")
+            metadata_path = os.path.join(frames_dir, "metadata.json")
             with open(metadata_path, 'w') as f:
                 json.dump(metadata, f, indent=2)
             
-            return filepath
+            return frames_dir
             
         except Exception as e:
-            logger.error(f"Error saving video: {e}")
+            logger.error(f"Error saving frames: {e}")
             return None
+    
+    def _compile_frames_to_video(self, frame_paths: List[str], output_path: str, fps: int = 8) -> bool:
+        """Compile individual frames into a video using FFmpeg"""
+        try:
+            if not frame_paths:
+                logger.error("No frame paths provided")
+                return False
+            
+            # Get the directory containing the frames
+            frames_dir = os.path.dirname(frame_paths[0])
+            
+            # Create FFmpeg command to compile frames
+            # Using -framerate 8 (not -r) and libx264 with yuv420p pixel format
+            cmd = [
+                'ffmpeg',
+                '-y',  # Overwrite output file if it exists
+                '-framerate', str(fps),  # Input frame rate
+                '-i', os.path.join(frames_dir, 'frame_%04d.png'),  # Input pattern
+                '-c:v', 'libx264',  # Video codec
+                '-pix_fmt', 'yuv420p',  # Pixel format for compatibility
+                '-preset', 'medium',  # Encoding preset (balance between speed and quality)
+                '-crf', '23',  # Constant Rate Factor (quality setting, lower = better quality)
+                output_path
+            ]
+            
+            logger.info(f"Compiling frames to video: {' '.join(cmd)}")
+            
+            # Run FFmpeg command
+            import subprocess
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            
+            if result.returncode == 0:
+                logger.info(f"Successfully compiled video: {output_path}")
+                return True
+            else:
+                logger.error(f"FFmpeg failed with return code {result.returncode}")
+                logger.error(f"FFmpeg stderr: {result.stderr}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error compiling frames to video: {e}")
+            return False
+    
+    def compile_multiple_frame_directories_to_video(self, frame_directories: List[str], output_path: str, fps: int = 8) -> bool:
+        """Compile multiple frame directories into a single video by concatenating them"""
+        try:
+            if not frame_directories:
+                logger.error("No frame directories provided")
+                return False
+            
+            # Create temporary directory for combined frames
+            import tempfile
+            with tempfile.TemporaryDirectory() as temp_dir:
+                combined_frame_paths = []
+                frame_counter = 1
+                
+                # Copy all frames from all directories to a single directory with sequential numbering
+                for frame_dir in frame_directories:
+                    if not os.path.exists(frame_dir):
+                        logger.warning(f"Frame directory does not exist: {frame_dir}")
+                        continue
+                    
+                    # Get all frame files in the directory
+                    frame_files = sorted([f for f in os.listdir(frame_dir) if f.startswith('frame_') and f.endswith('.png')])
+                    
+                    for frame_file in frame_files:
+                        # Copy frame to combined directory with new sequential name
+                        new_frame_name = f"frame_{frame_counter:04d}.png"
+                        new_frame_path = os.path.join(temp_dir, new_frame_name)
+                        
+                        import shutil
+                        shutil.copy2(os.path.join(frame_dir, frame_file), new_frame_path)
+                        combined_frame_paths.append(new_frame_path)
+                        frame_counter += 1
+                
+                if not combined_frame_paths:
+                    logger.error("No frames found in any of the provided directories")
+                    return False
+                
+                logger.info(f"Combined {len(combined_frame_paths)} frames from {len(frame_directories)} directories")
+                
+                # Compile combined frames to video
+                return self._compile_frames_to_video(combined_frame_paths, output_path, fps)
+                
+        except Exception as e:
+            logger.error(f"Error compiling multiple frame directories to video: {e}")
+            return False
     
     def cleanup(self):
         """Clean up resources"""
