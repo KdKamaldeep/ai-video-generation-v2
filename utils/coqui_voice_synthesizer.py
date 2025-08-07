@@ -38,13 +38,14 @@ _patch_torch_load()
 
 class CoquiVoiceConfig(BaseModel):
     """Configuration for Coqui TTS voice synthesis"""
-    model_name: str = "tts_models/multilingual/multi-dataset/bark"
+    model_name: str = "tts_models/multilingual/multi-dataset/xtts_v2"  # Using XTTS v2 for better reliability
     gpu: bool = True
-    voice_dir: str = "bark_voices/"
+    voice_dir: str = "tts_voices/"
     speaker: str = "random"
     text_temp: float = 0.7
     waveform_temp: float = 0.7
     progress_bar: bool = True
+    language: str = "en"  # Default language for XTTS v2
 
 class CoquiVoiceSynthesizer:
     def __init__(self, config: Optional[CoquiVoiceConfig] = None):
@@ -68,23 +69,41 @@ class CoquiVoiceSynthesizer:
         logger.info(f"Voice directory: {self.config.voice_dir}")
     
     def _load_model(self):
-        """Load the Coqui TTS model"""
+        """Load the Coqui TTS model with fallback options"""
         try:
             from TTS.api import TTS
 
-            logger.info("Loading Coqui TTS Bark model...")
-
             device = "cuda" if self.config.gpu and torch.cuda.is_available() else "cpu"
-
-            self.tts = TTS(self.config.model_name).to(device)
-
-            logger.info("✅ Coqui TTS Bark model loaded successfully")
+            
+            # List of fallback models to try if the primary model fails
+            fallback_models = [
+                self.config.model_name,  # XTTS v2
+                "tts_models/en/ljspeech/tacotron2-DDC",
+                "tts_models/en/ljspeech/fast_pitch",
+                "tts_models/en/vctk/vits",
+                "tts_models/multilingual/multi-dataset/your_tts"
+            ]
+            
+            for model_name in fallback_models:
+                try:
+                    logger.info(f"Attempting to load TTS model: {model_name}")
+                    self.tts = TTS(model_name).to(device)
+                    logger.info(f"✅ Successfully loaded TTS model: {model_name}")
+                    # Update config to reflect the actually loaded model
+                    self.config.model_name = model_name
+                    return
+                except Exception as e:
+                    logger.warning(f"Failed to load model {model_name}: {e}")
+                    continue
+            
+            # If we get here, all models failed
+            raise Exception("All TTS models failed to load")
 
         except ImportError:
             logger.error("❌ Coqui TTS not installed. Install with: pip install TTS")
             raise ImportError("Coqui TTS not available. Install with: pip install TTS")
         except Exception as e:
-            logger.error(f"❌ Failed to load Coqui TTS model: {e}")
+            logger.error(f"❌ Failed to load any TTS model: {e}")
             raise
 
     
@@ -137,13 +156,32 @@ class CoquiVoiceSynthesizer:
             # Generate audio using Coqui TTS
             logger.info(f"Generating audio with speaker: {current_speaker}")
             
-            self.tts.tts_to_file(
-                text=full_text,
-                file_path=output_path,
-                voice_dir=self.config.voice_dir,
-                speaker=current_speaker,
-                progress_bar=self.config.progress_bar
-            )
+            # Handle different model APIs
+            if "xtts_v2" in self.config.model_name:
+                # XTTS v2 requires speaker_wav and language parameters
+                if voice_clone_audio and os.path.exists(voice_clone_audio):
+                    # Use the provided voice cloning audio
+                    speaker_wav = voice_clone_audio
+                else:
+                    # Create a default speaker audio or use a sample
+                    speaker_wav = self._get_default_speaker_audio()
+                
+                self.tts.tts_to_file(
+                    text=full_text,
+                    file_path=output_path,
+                    speaker_wav=speaker_wav,
+                    language=self.config.language,
+                    progress_bar=self.config.progress_bar
+                )
+            else:
+                # Standard TTS API for other models
+                self.tts.tts_to_file(
+                    text=full_text,
+                    file_path=output_path,
+                    voice_dir=self.config.voice_dir,
+                    speaker=current_speaker,
+                    progress_bar=self.config.progress_bar
+                )
             
             if os.path.exists(output_path):
                 logger.info(f"✅ Voice synthesized successfully: {output_path}")
@@ -256,6 +294,41 @@ class CoquiVoiceSynthesizer:
         
         logger.info("Silent audio file created successfully")
         return output_path
+    
+    def _get_default_speaker_audio(self) -> str:
+        """Get or create a default speaker audio file for XTTS v2"""
+        default_speaker_path = os.path.join(self.config.voice_dir, "default_speaker.wav")
+        
+        if not os.path.exists(default_speaker_path):
+            logger.info("Creating default speaker audio for XTTS v2")
+            # Create a simple sine wave as default speaker audio
+            import wave
+            import struct
+            import math
+            
+            sample_rate = 22050
+            duration = 3.0  # 3 seconds
+            frequency = 440  # A4 note
+            amplitude = 0.3
+            
+            num_samples = int(sample_rate * duration)
+            
+            with wave.open(default_speaker_path, 'w') as wav_file:
+                wav_file.setnchannels(1)  # Mono
+                wav_file.setsampwidth(2)  # 16-bit
+                wav_file.setframerate(sample_rate)
+                
+                # Generate sine wave data
+                audio_data = []
+                for i in range(num_samples):
+                    sample = amplitude * math.sin(2 * math.pi * frequency * i / sample_rate)
+                    audio_data.append(struct.pack('<h', int(sample * 32767)))
+                
+                wav_file.writeframes(b''.join(audio_data))
+            
+            logger.info(f"Default speaker audio created: {default_speaker_path}")
+        
+        return default_speaker_path
     
     def cleanup(self):
         """Clean up resources"""
