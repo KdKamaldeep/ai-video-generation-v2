@@ -29,6 +29,7 @@ import traceback
 # AnimateDiff imports
 try:
     from diffusers import AnimateDiffPipeline, DDIMScheduler
+    from diffusers.models.motion_adapter import MotionAdapter
     from diffusers.utils import export_to_video
     ANIMATEDIFF_AVAILABLE = True
     print("✅ AnimateDiffPipeline import succeeded.")
@@ -70,7 +71,7 @@ class AnimateDiffGenerator:
         
         # Frame limits for text-to-video generation (following official recommendations)
         self.min_frames = 16
-        self.max_frames = 48  # Increased from 24 to support longer videos
+        self.max_frames = 32  # Most motion adapters support up to 32 frames
         self.default_frames = 24  # Increased from 20
         
         # Memory optimization settings
@@ -130,7 +131,8 @@ class AnimateDiffGenerator:
                     subfolder="scheduler",
                     cache_dir=self.cache_dir,  # Cache the scheduler
                     algorithm_type="dpmsolver++",  # Use dpmsolver++ instead of deis
-                    solver_type="midpoint"  # Use midpoint solver for better stability
+                    solver_type="midpoint",  # Use midpoint solver for better stability
+                    final_sigmas_type="sigma_min"
                 )
                 self.sd_pipeline.scheduler = scheduler
                 logger.info("DPMSolverMultistepScheduler configured successfully")
@@ -141,7 +143,8 @@ class AnimateDiffGenerator:
                     scheduler = DPMSolverMultistepScheduler.from_pretrained(
                         self.sd_model_id,
                         subfolder="scheduler",
-                        cache_dir=self.cache_dir
+                        cache_dir=self.cache_dir,
+                        final_sigmas_type="sigma_min"
                     )
                     self.sd_pipeline.scheduler = scheduler
                     logger.info("DPMSolverMultistepScheduler configured with default settings")
@@ -176,10 +179,18 @@ class AnimateDiffGenerator:
                     try:
                         logger.info(f"Trying MotionAdapter: {adapter_id}")
                         
-                        # Load AnimateDiff with MotionAdapter following official pattern
+                        # Load MotionAdapter first
+                        try:
+                            motion_adapter = MotionAdapter.from_pretrained(adapter_id, cache_dir=self.cache_dir)
+                            logger.info(f"Motion adapter loaded: {adapter_id}")
+                        except Exception as e:
+                            logger.warning(f"Could not load motion adapter {adapter_id}: {e}")
+                            continue
+                        
+                        # Load AnimateDiff with MotionAdapter using the motion_adapter argument
                         self.animatediff_pipeline = AnimateDiffPipeline.from_pretrained(
                             self.sd_model_id,
-                            motion_adapter_path=adapter_id,
+                            motion_adapter=motion_adapter,
                             torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
                             cache_dir=self.cache_dir,  # Cache the model
                             # Remove variant parameter as these models don't have fp16 variants
@@ -187,29 +198,34 @@ class AnimateDiffGenerator:
                         
                         # Configure DDIM scheduler for AnimateDiff (official recommendation)
                         try:
+                            # Try to load scheduler from the motion adapter
                             scheduler = DDIMScheduler.from_pretrained(
                                 adapter_id,
                                 subfolder="scheduler",
                                 cache_dir=self.cache_dir,  # Cache the scheduler
                                 beta_start=0.00085,  # Standard DDIM parameters
                                 beta_end=0.012,
-                                beta_schedule="scaled_linear"
+                                beta_schedule="scaled_linear",
+                                final_sigmas_type="sigma_min"
                             )
                             self.animatediff_pipeline.scheduler = scheduler
                             logger.info("DDIMScheduler configured for AnimateDiff")
                         except Exception as e:
-                            logger.warning(f"Could not configure AnimateDiff scheduler: {e}")
+                            logger.warning(f"Could not configure AnimateDiff scheduler from adapter: {e}")
                             # Try with default settings if custom configuration fails
                             try:
                                 scheduler = DDIMScheduler.from_pretrained(
                                     adapter_id,
                                     subfolder="scheduler",
-                                    cache_dir=self.cache_dir
+                                    cache_dir=self.cache_dir,
+                                    final_sigmas_type="sigma_min"
                                 )
                                 self.animatediff_pipeline.scheduler = scheduler
                                 logger.info("DDIMScheduler configured with default settings")
                             except Exception as e2:
                                 logger.warning(f"Could not configure AnimateDiff scheduler with default settings: {e2}")
+                                # Use the default scheduler that comes with the pipeline
+                                logger.info("Using default pipeline scheduler")
                         
                         # Move to device
                         self.animatediff_pipeline = self.animatediff_pipeline.to(self.device)
@@ -440,6 +456,19 @@ class AnimateDiffGenerator:
         elif num_frames > self.max_frames:
             logger.warning(f"Frame count {num_frames} too high, using maximum {self.max_frames}")
             return self.max_frames
+        
+        # Ensure frame count is compatible with motion adapter (usually multiples of 8 or 16)
+        # Most AnimateDiff motion adapters work best with 16, 24, or 32 frames
+        if num_frames % 8 != 0:
+            # Round to nearest multiple of 8
+            adjusted_frames = round(num_frames / 8) * 8
+            if adjusted_frames < self.min_frames:
+                adjusted_frames = self.min_frames
+            elif adjusted_frames > self.max_frames:
+                adjusted_frames = self.max_frames
+            logger.info(f"Adjusted frame count from {num_frames} to {adjusted_frames} for motion adapter compatibility")
+            return adjusted_frames
+        
         return num_frames
     
     def _create_enhanced_prompt(self, text: str, style: str) -> str:
