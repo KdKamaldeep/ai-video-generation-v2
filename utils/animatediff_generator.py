@@ -543,8 +543,11 @@ class AnimateDiffGenerator:
             # Encode video from image sequence with accurate FPS
             subprocess.run([
                 'ffmpeg', '-y',
-                '-framerate', str(fps),  # Accurate FPS control
+                '-framerate', str(fps),
                 '-i', os.path.join(frame_dir, 'frame_%04d.png'),
+                '-r', str(fps),
+                '-vsync', 'vfr',
+                '-force_key_frames', f"expr:gte(t,n_forced*{1/fps})",
                 '-pix_fmt', 'yuv420p',
                 '-c:v', 'libx264',
                 final_path
