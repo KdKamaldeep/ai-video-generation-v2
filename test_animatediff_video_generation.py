@@ -449,23 +449,7 @@ def main():
     logger.info("\n" + "="*60)
     logger.info("FINAL SUMMARY")
     logger.info("="*60)
-    
-    if multi_test_result["success"]:
-        summary = multi_test_result["summary"]
-        logger.info(f"Multi-test Results:")
-        logger.info(f"  Total: {summary['total']}")
-        logger.info(f"  Successful: {summary['successful']}")
-        logger.info(f"  Failed: {summary['failed']}")
-        logger.info(f"  Success Rate: {summary['success_rate']:.1f}%")
-        
-        # Show S3 URLs for successful videos
-        successful_results = [r for r in multi_test_result["results"] if r['status'] == '✅ SUCCESS']
-        if successful_results:
-            logger.info(f"\n🌐 S3 URLs for successful videos:")
-            for result in successful_results:
-                if result['s3_url']:
-                    logger.info(f"  {result['scenario']}: {result['s3_url']}")
-    
+   
     if single_test_result["success"]:
         logger.info(f"Single Test Results:")
         logger.info(f"  Local Path: {single_test_result['local_path']}")
@@ -474,7 +458,6 @@ def main():
         logger.info(f"  Generation Time: {single_test_result['generation_time_seconds']:.2f} seconds")
     
     return {
-        "multi_test": multi_test_result,
         "single_test": single_test_result
     }
 
@@ -483,17 +466,6 @@ if __name__ == "__main__":
     
     # Print final results for easy access
     print(f"\n📁 Final Results:")
-    if result["multi_test"]["success"]:
-        summary = result["multi_test"]["summary"]
-        print(f"   Multi-test: {summary['successful']}/{summary['total']} successful ({summary['success_rate']:.1f}%)")
-        
-        # Print S3 URLs prominently
-        successful_results = [r for r in result["multi_test"]["results"] if r['status'] == '✅ SUCCESS']
-        if successful_results:
-            print(f"\n🌐 S3 URLs:")
-            for result_item in successful_results:
-                if result_item['s3_url']:
-                    print(f"   {result_item['scenario']}: {result_item['s3_url']}")
     
     if result["single_test"]["success"]:
         print(f"   Single test video: {result['single_test']['local_path']}")
