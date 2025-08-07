@@ -281,75 +281,24 @@ def test_animatediff_generator():
         
         # Test scenarios - now targeting 10+ seconds each with story-based chunk variations
         test_scenarios = [
-           
-            {
-                "name": "Cat Adventure Story",
-                "base_prompt": "A cute cartoon cat playing with a ball of yarn",
-                "chunk_variations": [
-                    "the cat discovers the yarn and begins to play curiously",
-                    "the cat becomes more excited and starts batting the ball around",
-                    "the yarn unravels and creates a tangled mess on the floor",
-                    "the cat jumps and pounces, chasing the unraveling yarn",
-                    "the cat finally tires out and curls up next to the yarn"
-                ],
-                "style": "cartoon",
-                "target_duration": 12,  # 12 seconds
-                "fps": 12,
-                "width": 512,
-                "height": 768,
-                "seed": 123
-            },
-            {
-                "name": "Geometric Dance Story",
-                "base_prompt": "Simple geometric shapes moving in a minimalist design",
-                "chunk_variations": [
-                    "circles appear and begin bouncing in a rhythmic pattern",
-                    "squares slide in from the sides and join the dance",
-                    "triangles rotate slowly, adding complexity to the movement",
-                    "shapes fade in and out, creating a mesmerizing effect",
-                    "all shapes unite in a final synchronized spinning motion"
-                ],
-                "style": "minimalist",
-                "target_duration": 10,  # 10 seconds
-                "fps": 8,
-                "width": 512,
-                "height": 768,
-                "seed": 456
-            },
-            {
-                "name": "Storm Drama Story",
-                "base_prompt": "A dramatic storm with lightning and dark clouds",
-                "chunk_variations": [
-                    "the storm begins with distant thunder and darkening skies",
-                    "lightning strikes dramatically, illuminating the turbulent ocean",
-                    "the camera pulls back to reveal the full scale of the storm",
-                    "multiple lightning bolts flash across the sky simultaneously",
-                    "the storm reaches its peak as heavy rain pours down"
-                ],
-                "style": "dramatic",
-                "target_duration": 10,  # 10 seconds
-                "fps": 10,
-                "width": 512,
-                "height": 768,
-                "seed": 789
-            },
-            {
+           {
                 "name": "Penguin Comedy Story",
-                "base_prompt": "A silly penguin slipping on ice and falling",
+                "base_prompt": "A silly cartoon penguin slipping on ice and falling, colorful, comical scene",
                 "chunk_variations": [
-                    "the penguin walks carefully across the slippery ice surface",
-                    "it loses its balance and starts sliding uncontrollably",
-                    "the penguin flaps its wings frantically trying to regain control",
-                    "it spins around in circles before finally losing balance",
-                    "the penguin lands on its back, looking dazed and confused"
+                    "The penguin walks carefully across the slippery ice surface",
+                    "It loses its balance and starts sliding uncontrollably",
+                    "The penguin flaps its wings frantically trying to regain control",
+                    "It spins around in circles before finally losing balance",
+                    "The penguin lands on its back, looking dazed and confused"
                 ],
-                "style": "funny",
-                "target_duration": 10,  # 10 seconds
-                "fps": 8,
+                "style": "cartoon",         # Must match your style_enhancements keys
+                "target_duration": 10,      # total video duration in seconds
+                "fps": 8,                   # frames per second
                 "width": 512,
                 "height": 768,
                 "seed": 321
             }
+
         ]
         
         results = []
