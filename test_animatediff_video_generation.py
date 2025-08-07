@@ -123,136 +123,7 @@ def generate_long_video_with_chunks(generator, text: str, style: str, target_dur
         logger.error(f"❌ Error generating long video: {e}")
         return None
 
-def generate_long_video_with_chunk_variations(generator, base_prompt: str, chunk_variations: List[str], 
-                                            style: str, target_duration: int = 10, fps: int = 8, 
-                                            width: int = 512, height: int = 768, 
-                                            seed: Optional[int] = None) -> Optional[str]:
-    """
-    Generate a longer video by creating multiple 24-frame chunks with different variations
-    
-    Args:
-        generator: AnimateDiff generator instance
-        base_prompt: Base text prompt for video generation
-        chunk_variations: List of variations to append to base prompt for each chunk
-        style: Video style
-        target_duration: Target duration in seconds
-        fps: Frames per second
-        width: Video width
-        height: Video height
-        seed: Random seed
-    
-    Returns:
-        Path to the final longer video, or None if failed
-    """
-    try:
-        max_frames = 24  # AnimateDiff limit
-        total_frames_needed = target_duration * fps
-        num_chunks = (total_frames_needed + max_frames - 1) // max_frames  # Ceiling division
-        
-        logger.info(f"Generating {target_duration}s video at {fps} FPS with {len(chunk_variations)} variations")
-        logger.info(f"Total frames needed: {total_frames_needed}")
-        logger.info(f"Will generate {num_chunks} chunks of {max_frames} frames each")
-        logger.info(f"Base prompt: {base_prompt}")
-        
-        chunk_videos = []
-        
-        for chunk_idx in range(num_chunks):
-            logger.info(f"Generating chunk {chunk_idx + 1}/{num_chunks}")
-            
-            # Each chunk represents a sequential part of the story
-            # Use variations in order to create proper story progression
-            variation_idx = chunk_idx % len(chunk_variations)
-            variation = chunk_variations[variation_idx]
-            
-            # Create story-based prompts that build sequentially
-            if chunk_idx == 0:
-                # First chunk: establish the scene
-                full_prompt = f"{base_prompt}, {variation}"
-            elif chunk_idx == num_chunks - 1:
-                # Last chunk: conclude the story
-                full_prompt = f"{base_prompt}, {variation}, final scene"
-            else:
-                # Middle chunks: continue the story progression
-                full_prompt = f"{base_prompt}, {variation}, story continues"
-            
-            logger.info(f"Story Chunk {chunk_idx + 1}/{num_chunks}: {full_prompt}")
-            
-            # Generate chunk with slightly different seed for variety
-            chunk_seed = seed + chunk_idx if seed is not None else None
-            
-            chunk_path = generator.generate_animated_video_from_text(
-                text=full_prompt,
-                style=style,
-                width=width,
-                height=height,
-                num_frames=max_frames,
-                fps=fps,
-                motion_strength=0.8,
-                num_inference_steps=20,
-                guidance_scale=7.5,
-                seed=chunk_seed
-            )
-            
-            if chunk_path and os.path.exists(chunk_path):
-                chunk_videos.append(chunk_path)
-                logger.info(f"✅ Chunk {chunk_idx + 1} generated: {chunk_path}")
-            else:
-                logger.error(f"❌ Failed to generate chunk {chunk_idx + 1}")
-                return None
-        
-        if not chunk_videos:
-            logger.error("❌ No chunks were generated successfully")
-            return None
-        
-        # Create longer video by concatenating chunks
-        logger.info(f"Concatenating {len(chunk_videos)} chunks into longer video...")
-        
-        # Create file list for concatenation
-        timestamp = int(time.time())
-        file_list_path = os.path.join(os.path.dirname(chunk_videos[0]), f"chunk_list_{timestamp}.txt")
-        
-        with open(file_list_path, 'w') as f:
-            for chunk_path in chunk_videos:
-                f.write(f"file '{os.path.abspath(chunk_path)}'\n")
-        
-        # Generate final video path
-        final_video_path = os.path.join(
-            os.path.dirname(chunk_videos[0]), 
-            f"long_video_{timestamp}.mp4"
-        )
-        
-        # Concatenate chunks using FFmpeg
-        try:
-            # Create file list for video concatenation
-            with open(file_list_path, 'w') as f:
-                for video_path in chunk_videos:
-                    f.write(f"file '{os.path.abspath(video_path)}'\n")
-            
-            # Combine videos with proper PTS handling
-            subprocess.run([
-                'ffmpeg', '-f', 'concat', '-safe', '0',
-                '-i', file_list_path,
-                '-c', 'copy',
-                '-y', final_video_path
-            ], check=True, capture_output=True)
-            
-            logger.info(f"✅ Long video created: {final_video_path}")
-            
-            # Clean up chunk files and file list
-            os.remove(file_list_path)
-            for chunk_path in chunk_videos:
-                if os.path.exists(chunk_path):
-                    os.remove(chunk_path)
-            
-            return final_video_path
-            
-        except subprocess.CalledProcessError as e:
-            logger.error(f"❌ FFmpeg concatenation failed: {e}")
-            return None
-            
-    except Exception as e:
-        logger.error(f"❌ Error generating long video: {e}")
-        return None
+
 
 def test_animatediff_generator():
     """Test the AnimateDiff generator with various scenarios and S3 upload"""
@@ -279,18 +150,11 @@ def test_animatediff_generator():
         s3_uploader = S3Uploader()
         logger.info("✅ S3 uploader initialized successfully")
         
-        # Test scenarios - now targeting 10+ seconds each with story-based chunk variations
+        # Test scenarios - now targeting 10+ seconds each
         test_scenarios = [
            {
                 "name": "Penguin Comedy Story",
-                "base_prompt": "A silly cartoon penguin slipping on ice and falling, colorful, comical scene",
-                "chunk_variations": [
-                    "The penguin walks carefully across the slippery ice surface",
-                    "It loses its balance and starts sliding uncontrollably",
-                    "The penguin flaps its wings frantically trying to regain control",
-                    "It spins around in circles before finally losing balance",
-                    "The penguin lands on its back, looking dazed and confused"
-                ],
+                "text": "A silly cartoon penguin slipping on ice and falling, colorful, comical scene",
                 "style": "cartoon",         # Must match your style_enhancements keys
                 "target_duration": 10,      # total video duration in seconds
                 "fps": 8,                   # frames per second
@@ -311,11 +175,10 @@ def test_animatediff_generator():
             try:
                 start_time = time.time()
                 
-                # Generate longer video using chunks with variations
-                video_path = generate_long_video_with_chunk_variations(
+                # Generate longer video using chunks
+                video_path = generate_long_video_with_chunks(
                     generator=generator,
-                    base_prompt=scenario['base_prompt'],
-                    chunk_variations=scenario['chunk_variations'],
+                    text=scenario['text'],
                     style=scenario['style'],
                     target_duration=scenario['target_duration'],
                     fps=scenario['fps'],
@@ -472,32 +335,26 @@ def test_single_video_with_upload():
             memory_optimization=True
         )
         
-        # Test parameters with story-based chunk variations
+        # Test parameters
         test_params = {
-            "base_prompt": "A majestic eagle soaring through the clouds at sunset",
-            "chunk_variations": [
-                "the eagle begins its flight, gliding smoothly through the golden clouds",
-                "it catches a powerful updraft and soars higher into the sky",
-                "the eagle spots movement below and begins a dramatic hunting dive",
-                "it spreads its massive wings wide, showcasing its impressive wingspan",
-                "the eagle completes its journey by landing gracefully on a mountain peak"
-            ],
+            "name": "Eagle Sunset Flight",
+            "base_prompt": "A realistic eagle soaring through golden clouds at sunset, wings fully outstretched, sunlit feathers, detailed anatomy, flying smoothly through the sky, cinematic lighting, natural motion",
             "style": "realistic",
-            "width": 512,
-            "height": 768,
-            "target_duration": 10,  # 10 seconds
-            "fps": 8,
+            "target_duration": 12,
+            "fps": 12,
+            "width": 768,
+            "height": 512,
             "seed": 42
-        }
+            }
+
         
-        logger.info(f"Generating video for: {test_params['base_prompt']}")
+        logger.info(f"Generating video for: {test_params['text']}")
         
-        # Generate video using chunks with variations
+        # Generate video using chunks
         start_time = time.time()
-        video_path = generate_long_video_with_chunk_variations(
+        video_path = generate_long_video_with_chunks(
             generator=generator,
-            base_prompt=test_params['base_prompt'],
-            chunk_variations=test_params['chunk_variations'],
+            text=test_params['base_prompt'],
             style=test_params['style'],
             target_duration=test_params['target_duration'],
             fps=test_params['fps'],
@@ -579,7 +436,7 @@ def main():
     logger.info("TEST 1: Multiple Video Generation Scenarios with S3 Upload")
     logger.info("="*60)
     
-    multi_test_result = test_animatediff_generator()
+    #multi_test_result = test_animatediff_generator()
     
     # Test 2: Single video with S3 upload
     logger.info("\n" + "="*60)
