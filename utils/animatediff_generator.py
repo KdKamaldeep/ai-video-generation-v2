@@ -70,8 +70,8 @@ class AnimateDiffGenerator:
         
         # Frame limits for text-to-video generation (following official recommendations)
         self.min_frames = 16
-        self.max_frames = 24
-        self.default_frames = 20
+        self.max_frames = 48  # Increased from 24 to support longer videos
+        self.default_frames = 24  # Increased from 20
         
         # Memory optimization settings
         self.decode_chunk_size = 8  # Official recommendation for memory efficiency
@@ -128,12 +128,25 @@ class AnimateDiffGenerator:
                 scheduler = DPMSolverMultistepScheduler.from_pretrained(
                     self.sd_model_id,
                     subfolder="scheduler",
-                    cache_dir=self.cache_dir  # Cache the scheduler
+                    cache_dir=self.cache_dir,  # Cache the scheduler
+                    algorithm_type="dpmsolver++",  # Use dpmsolver++ instead of deis
+                    solver_type="midpoint"  # Use midpoint solver for better stability
                 )
                 self.sd_pipeline.scheduler = scheduler
                 logger.info("DPMSolverMultistepScheduler configured successfully")
             except Exception as e:
                 logger.warning(f"Could not configure scheduler: {e}")
+                # Try with default settings if custom configuration fails
+                try:
+                    scheduler = DPMSolverMultistepScheduler.from_pretrained(
+                        self.sd_model_id,
+                        subfolder="scheduler",
+                        cache_dir=self.cache_dir
+                    )
+                    self.sd_pipeline.scheduler = scheduler
+                    logger.info("DPMSolverMultistepScheduler configured with default settings")
+                except Exception as e2:
+                    logger.warning(f"Could not configure scheduler with default settings: {e2}")
             
             # Move to device
             self.sd_pipeline = self.sd_pipeline.to(self.device)
@@ -177,12 +190,26 @@ class AnimateDiffGenerator:
                             scheduler = DDIMScheduler.from_pretrained(
                                 adapter_id,
                                 subfolder="scheduler",
-                                cache_dir=self.cache_dir  # Cache the scheduler
+                                cache_dir=self.cache_dir,  # Cache the scheduler
+                                beta_start=0.00085,  # Standard DDIM parameters
+                                beta_end=0.012,
+                                beta_schedule="scaled_linear"
                             )
                             self.animatediff_pipeline.scheduler = scheduler
                             logger.info("DDIMScheduler configured for AnimateDiff")
                         except Exception as e:
                             logger.warning(f"Could not configure AnimateDiff scheduler: {e}")
+                            # Try with default settings if custom configuration fails
+                            try:
+                                scheduler = DDIMScheduler.from_pretrained(
+                                    adapter_id,
+                                    subfolder="scheduler",
+                                    cache_dir=self.cache_dir
+                                )
+                                self.animatediff_pipeline.scheduler = scheduler
+                                logger.info("DDIMScheduler configured with default settings")
+                            except Exception as e2:
+                                logger.warning(f"Could not configure AnimateDiff scheduler with default settings: {e2}")
                         
                         # Move to device
                         self.animatediff_pipeline = self.animatediff_pipeline.to(self.device)
@@ -310,7 +337,7 @@ class AnimateDiffGenerator:
         width: int = 512,
         height: int = 768,
         num_frames: int = None,
-        fps: int = 8,
+        fps: int = 12,  # Increased default FPS for smoother video
         motion_strength: float = 0.8,
         num_inference_steps: int = 20,
         guidance_scale: float = 7.5,

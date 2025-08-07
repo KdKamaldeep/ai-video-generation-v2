@@ -265,9 +265,12 @@ class KidsCartoonGenerator:
                 # Create kid-friendly prompt
                 prompt = f"{visual_suggestion}, {style_enhancement}, kid-friendly, safe for children, no scary elements"
                 
-                # Calculate frames based on narration duration (assuming 8 FPS)
+                # Calculate frames based on narration duration with better frame rate
                 target_duration = script["durations"][i] if i < len(script["durations"]) else 4
-                num_frames = max(16, int(target_duration * 8))  # At least 16 frames, scale with duration
+                
+                # Use higher FPS for smoother video and calculate frames accordingly
+                fps = 12  # Increased from 8 to 12 for smoother playback
+                num_frames = max(16, min(48, int(target_duration * fps)))  # Scale with duration, max 48 frames
                 
                 # Generate video with improved settings for better quality
                 video_path = generator.generate_animated_video_from_text(
@@ -276,7 +279,7 @@ class KidsCartoonGenerator:
                     width=512,
                     height=768,  # Vertical for YouTube Shorts
                     num_frames=num_frames,  # Dynamic frame count based on duration
-                    fps=8,
+                    fps=fps,  # Use calculated FPS
                     motion_strength=0.8,  # Increased for smoother motion
                     num_inference_steps=25,  # Increased for better quality
                     guidance_scale=8.0,  # Increased for better prompt adherence
