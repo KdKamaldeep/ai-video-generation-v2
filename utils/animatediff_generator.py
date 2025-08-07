@@ -520,31 +520,37 @@ class AnimateDiffGenerator:
             return None
     
     def _save_video(self, video_frames: List[Image.Image], original_text: str, 
-                seed: Optional[int] = None, fps: int = 8) -> Optional[str]:
-        """Save generated video with metadata and enforce correct frame rate"""
+                    seed: Optional[int] = None, fps: int = 8) -> Optional[str]:
+        """Save generated video from frames with accurate FPS using FFmpeg image sequence input."""
         try:
-            # Generate filename
+            # Create safe names
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             unique_id = str(uuid.uuid4())[:8]
-            safe_text = "".join(c for c in original_text[:50] if c.isalnum() or c in (' ', '-', '_')).rstrip()
-            safe_text = safe_text.replace(' ', '_')
+            safe_text = "".join(c for c in original_text[:50] if c.isalnum() or c in (' ', '-', '_')).rstrip().replace(' ', '_')
 
-            raw_path = os.path.join(self.video_output_dir, f"{timestamp}_{unique_id}_{safe_text}_raw.mp4")
-            final_path = raw_path.replace("_raw.mp4", ".mp4")
+            # Frame directory and paths
+            frame_dir = os.path.join(self.video_output_dir, f"{timestamp}_{unique_id}_frames")
+            os.makedirs(frame_dir, exist_ok=True)
 
-            # Step 1: Export raw video (potentially wrong FPS)
-            export_to_video(video_frames, raw_path, fps=fps)
+            # Save frames as PNGs
+            for i, frame in enumerate(video_frames):
+                frame_path = os.path.join(frame_dir, f"frame_{i:04d}.png")
+                frame.save(frame_path)
 
-            # Step 2: Re-encode with correct FPS using FFmpeg
+            # Define output video path
+            final_path = os.path.join(self.video_output_dir, f"{timestamp}_{unique_id}_{safe_text}.mp4")
+            logger.info(f"++++++++++Saving video to: {final_path} with fps={fps}+++++++++++++++")
+            # Encode video from image sequence with accurate FPS
             subprocess.run([
-                'ffmpeg', '-y', '-i', raw_path,
-                '-r', str(fps),
+                'ffmpeg', '-y',
+                '-framerate', str(fps),  # Accurate FPS control
+                '-i', os.path.join(frame_dir, 'frame_%04d.png'),
                 '-pix_fmt', 'yuv420p',
                 '-c:v', 'libx264',
                 final_path
             ], check=True)
 
-            # Step 3: Save metadata
+            # Save metadata
             metadata = {
                 "text": original_text,
                 "seed": seed,
@@ -563,6 +569,7 @@ class AnimateDiffGenerator:
         except Exception as e:
             logger.error(f"Error saving video: {e}")
             return None
+
     
     def cleanup(self):
         """Clean up resources"""
