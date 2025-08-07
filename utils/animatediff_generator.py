@@ -111,7 +111,8 @@ class AnimateDiffGenerator:
                 self.sd_model_id,
                 torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
                 safety_checker=None,
-                requires_safety_checker=False
+                requires_safety_checker=False,
+                # Remove variant parameter to avoid fp16 issues
             )
             
             # Configure scheduler for better quality
@@ -158,7 +159,7 @@ class AnimateDiffGenerator:
                             self.sd_model_id,
                             motion_adapter_path=adapter_id,
                             torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
-                            variant="fp16" if self.device == "cuda" else None,
+                            # Remove variant parameter as these models don't have fp16 variants
                         )
                         
                         # Configure DDIM scheduler for AnimateDiff (official recommendation)
