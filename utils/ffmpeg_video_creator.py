@@ -5,33 +5,33 @@ from typing import List, Optional
 from PIL import Image, ImageDraw, ImageFont
 import json
 import logging
-from .stable_diffusion_generator import StableDiffusionGenerator
+from .animatediff_generator import AnimateDiffGenerator
 from .s3_uploader import S3Uploader
 
 logger = logging.getLogger(__name__)
 
 class FFmpegVideoCreator:
-    def __init__(self, use_stable_video_diffusion: bool = True):
+    def __init__(self, use_animatediff: bool = True):
         """
-        Initialize FFmpeg video creator with optional stable video diffusion
+        Initialize FFmpeg video creator with optional AnimateDiff
         
         Args:
-            use_stable_video_diffusion: Whether to use stable video diffusion for motion
+            use_animatediff: Whether to use AnimateDiff for motion
         """
         self.width = 1080
         self.height = 1920  # 9:16 aspect ratio for YouTube Shorts
         self.fps = 30
-        self.use_stable_video_diffusion = use_stable_video_diffusion
+        self.use_animatediff = use_animatediff
         
-        # Initialize stable diffusion generator if needed
-        self.sd_generator = None
-        if use_stable_video_diffusion:
+        # Initialize AnimateDiff generator if needed
+        self.animatediff_generator = None
+        if use_animatediff:
             try:
-                self.sd_generator = StableDiffusionGenerator()
-                logger.info("Stable diffusion generator initialized for video creation")
+                self.animatediff_generator = AnimateDiffGenerator()
+                logger.info("AnimateDiff generator initialized for video creation")
             except Exception as e:
-                logger.warning(f"Failed to initialize stable diffusion generator: {e}")
-                self.use_stable_video_diffusion = False
+                logger.warning(f"Failed to initialize AnimateDiff generator: {e}")
+                self.use_animatediff = False
         
         # Initialize S3 uploader
         self.s3_uploader = None
@@ -78,7 +78,7 @@ class FFmpegVideoCreator:
                 logger.info(f"Processing segment {i+1}/{len(narration_lines)}")
                 
                 # Create motion video or static image
-                if self.use_stable_video_diffusion and self.sd_generator:
+                if self.use_animatediff and self.animatediff_generator:
                     video_path = self._create_motion_video_segment(
                         temp_dir, line, i, motion_strength, num_frames_per_segment, video_fps
                     )
@@ -110,35 +110,25 @@ class FFmpegVideoCreator:
         num_frames: int,
         fps: int
     ) -> str:
-        """Create a motion video segment using stable video diffusion"""
+        """Create a motion video segment using AnimateDiff"""
         try:
             # Get target duration from the line
             target_duration = line.get("duration", 3.0)
             logger.info(f"Creating motion video segment {index} with target duration: {target_duration}s")
             
-            # Generate image first
-            image_path = self.sd_generator.generate_image_from_text(
+            # Generate animated video directly from text using AnimateDiff
+            video_path = self.animatediff_generator.generate_animated_video_from_text(
                 text=line.get("visual_suggestion", line["text"]),
                 style="realistic",
+                num_frames=num_frames,
+                fps=fps,
+                motion_strength=motion_strength,
                 seed=index * 1000
             )
             
-            if image_path:
-                # Generate motion video from the image with target duration
-                video_path = self.sd_generator.generate_video_from_image(
-                    image_path=image_path,
-                    motion_strength=motion_strength,
-                    num_frames=num_frames,
-                    fps=fps,
-                    seed=index * 1000,
-                    target_duration=target_duration,  # Pass target duration directly
-                    motion_type="dynamic",  # Use dynamic motion
-                    fast_mode=True
-                )
-                
-                if video_path:
-                    logger.info(f"Motion video segment {index} created: {video_path}")
-                    return video_path
+            if video_path:
+                logger.info(f"Motion video segment {index} created: {video_path}")
+                return video_path
             
             # Fallback to static image if video generation fails
             logger.warning(f"Motion video generation failed for segment {index}, using static image")

@@ -173,22 +173,23 @@ Content-Type: application/json
 - Requires GPU for optimal performance
 - Uses Realistic Vision V5.1 model for high-quality realistic images
 
-### Character Consistency (Stable Diffusion Only)
-The Stable Diffusion generator supports character consistency across multiple images:
+### Character Consistency (AnimateDiff Only)
+The AnimateDiff generator supports character consistency across multiple images and videos:
 
 ```python
 # Set character consistency
-stable_diffusion_generator.set_character_consistency(
+animatediff_generator.set_character_consistency(
     "A young woman with brown hair and glasses",
     seed=12345
 )
 
-# Generate consistent character images
-image_paths = stable_diffusion_generator.generate_consistent_character_frames(
+# Generate consistent character videos
+video_paths = animatediff_generator.generate_motion_videos_for_script(
     script_lines,
-    "A young woman with brown hair and glasses",
     style="realistic",
-    num_variations=3
+    motion_type="subtle",
+    num_frames=20,
+    maintain_character_consistency=True
 )
 ```
 
@@ -222,11 +223,12 @@ This will test:
 - Consistent quality
 - API rate limits apply
 
-### Stable Diffusion
-- Slower generation (30-120 seconds per image)
+### AnimateDiff
+- Text-to-video generation (16-24 frames)
 - Quality depends on hardware
 - No API costs or rate limits
 - GPU acceleration recommended
+- Frame limits: 16-24 frames for optimal performance
 
 ## Troubleshooting
 
@@ -235,12 +237,12 @@ This will test:
 2. Verify internet connection
 3. Check API quota and billing
 
-### Stable Diffusion Issues
-1. Install PyTorch and diffusers: `pip install torch diffusers transformers accelerate`
-2. Ensure sufficient disk space for model download (~4GB for Realistic Vision V5.1)
+### AnimateDiff Issues
+1. Install PyTorch and diffusers with AnimateDiff: `pip install torch diffusers[animatediff] transformers accelerate`
+2. Ensure sufficient disk space for model download (~4GB for AnimateDiff models)
 3. Use GPU if available for better performance
 4. Check CUDA installation for GPU support
-5. Realistic Vision model is optimized for realistic human faces and scenes
+5. AnimateDiff models are optimized for text-to-video generation with 16-24 frames
 
 ### Memory Issues
 - Reduce batch size for Stable Diffusion
@@ -257,20 +259,20 @@ import requests
 response = requests.post("http://localhost:8000/generate-images", json={
     "script_lines": ["A confused person"],
     "style": "realistic",
-    "use_stable_diffusion": False
+    "use_animatediff": False
 })
 
-# Generate with Stable Diffusion
+# Generate with AnimateDiff
 response = requests.post("http://localhost:8000/generate-images", json={
     "script_lines": ["A confused person"],
     "style": "realistic",
-    "use_stable_diffusion": True
+    "use_animatediff": True
 })
 ```
 
 ### Full Pipeline Example
 ```python
-# Complete pipeline with Stable Diffusion
+# Complete pipeline with AnimateDiff
 response = requests.post("http://localhost:8000/full-pipeline-with-images", json={
     "story_type": "comedy",
     "use_stable_diffusion": True,

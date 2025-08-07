@@ -16,7 +16,6 @@ from utils.shotstack_video_creator import ShotstackVideoCreator
 from utils.ffmpeg_video_creator import FFmpegVideoCreator
 from utils.youtube_uploader import YouTubeUploader
 from utils.image_generator import ImageGenerator
-from utils.stable_diffusion_generator import StableDiffusionGenerator
 from utils.animatediff_generator import AnimateDiffGenerator
 
 # Load environment variables
@@ -86,13 +85,6 @@ except Exception as e:
     image_generator = None
 
 try:
-    stable_diffusion_generator = StableDiffusionGenerator()
-    logger.info("StableDiffusionGenerator initialized successfully")
-except Exception as e:
-    logger.error(f"Could not initialize StableDiffusionGenerator: {e}")
-    stable_diffusion_generator = None
-
-try:
     animatediff_generator = AnimateDiffGenerator()
     logger.info("AnimateDiffGenerator initialized successfully")
 except Exception as e:
@@ -121,12 +113,12 @@ class ImageVideoRequest(BaseModel):
 class GenerateImagesRequest(BaseModel):
     script_lines: List[str]
     style: str = "realistic"
-    use_stable_diffusion: bool = False
+    use_animatediff: bool = True
 
 class FullPipelineWithImagesRequest(BaseModel):
     use_ffmpeg: bool = False
     animation_type: str = "zoom_in"
-    use_stable_diffusion: bool = False
+    use_animatediff: bool = True
     # Optional script data from generate-script response
     script_title: str = None
     script_narration: List[dict] = None
@@ -157,7 +149,7 @@ class AnimateDiffRequest(BaseModel):
     style: str = "realistic"
     width: int = 512
     height: int = 768
-    num_frames: int = 16
+    num_frames: int = 20
     fps: int = 8
     motion_strength: float = 0.8
     num_inference_steps: int = 20
@@ -167,7 +159,7 @@ class AnimateDiffRequest(BaseModel):
 class AnimateDiffMotionRequest(BaseModel):
     image_path: str
     motion_type: str = "subtle"
-    num_frames: int = 16
+    num_frames: int = 20
     fps: int = 8
     motion_strength: float = 0.8
     num_inference_steps: int = 20
@@ -178,7 +170,7 @@ class AnimateDiffScriptRequest(BaseModel):
     script_lines: List[str]
     style: str = "realistic"
     motion_type: str = "subtle"
-    num_frames: int = 16
+    num_frames: int = 20
     fps: int = 8
     maintain_character_consistency: bool = True
     character_description: str = None
@@ -224,10 +216,10 @@ async def root():
             },
             "image_generation": {
                 "dalle_enabled": image_generator is not None,
-                "stable_diffusion_enabled": stable_diffusion_generator is not None,
+                "animatediff_enabled": animatediff_generator is not None,
                 "dalle_model": "DALL-E 3",
-                "stable_diffusion_model": "SG161222/Realistic_Vision_V5.1_noVAE",
-                "description": "AI-powered image generation using DALL-E 3 or Stable Diffusion, saved locally in output/images folder"
+                "animatediff_model": "ByteDance/AnimateDiff-v1-5",
+                "description": "AI-powered image and video generation using DALL-E 3 or AnimateDiff, saved locally in output/images and output/videos folders"
             },
             "video_creation": {
                 "ffmpeg_support": ffmpeg_video_creator is not None,
@@ -393,17 +385,17 @@ async def generate_voice(request: VoiceRequest):
 
 @app.post("/generate-images")
 async def generate_images(request: GenerateImagesRequest):
-    """Generate images using DALL-E or Stable Diffusion and save locally"""
+    """Generate images using DALL-E or AnimateDiff and save locally"""
     logger.info(f"Image generation requested for {len(request.script_lines)} lines with style: {request.style}")
-    logger.info(f"Using {'Stable Diffusion' if request.use_stable_diffusion else 'DALL-E'} for image generation")
+    logger.info(f"Using {'AnimateDiff' if request.use_animatediff else 'DALL-E'} for image generation")
     
     # Choose image generator based on switch
-    if request.use_stable_diffusion:
-        if stable_diffusion_generator is None:
-            logger.error("Stable Diffusion generator not available")
-            raise HTTPException(status_code=503, detail="Stable Diffusion generator not available. Check model configuration.")
-        generator = stable_diffusion_generator
-        generator_name = "Stable Diffusion"
+    if request.use_animatediff:
+        if animatediff_generator is None:
+            logger.error("AnimateDiff generator not available")
+            raise HTTPException(status_code=503, detail="AnimateDiff generator not available. Check model configuration.")
+        generator = animatediff_generator
+        generator_name = "AnimateDiff"
     else:
         if image_generator is None:
             logger.error("DALL-E image generator not available")
@@ -614,25 +606,19 @@ async def get_available_image_generators():
                     "description": "OpenAI's DALL-E 3 model for high-quality image generation",
                     "requires_api_key": "OPENAI_API_KEY"
                 },
-                "stable_diffusion": {
-                    "name": "Stable Diffusion",
-                    "enabled": stable_diffusion_generator is not None,
-                    "description": "Open-source Stable Diffusion model for local image generation",
-                    "model_id": "SG161222/Realistic_Vision_V5.1_noVAE",
-                    "requires": "PyTorch, diffusers library"
-                },
                 "animatediff": {
                     "name": "AnimateDiff",
                     "enabled": animatediff_generator is not None,
-                    "description": "AnimateDiff for adding motion to static images or prompt-based generations",
+                    "description": "AnimateDiff for text-to-video generation with 16-24 frames",
                     "model_id": "ByteDance/AnimateDiff-v1-5",
-                    "requires": "PyTorch, diffusers[animatediff] library"
+                    "requires": "PyTorch, diffusers[animatediff] library",
+                    "frame_limits": "16-24 frames"
                 }
             },
-            "default": "dalle",
+            "default": "animatediff",
             "usage": {
-                "generate_images": "Set use_stable_diffusion=true to use Stable Diffusion",
-                "full_pipeline": "Set use_stable_diffusion=true to use Stable Diffusion",
+                "generate_images": "Set use_animatediff=true to use AnimateDiff",
+                "full_pipeline": "Set use_animatediff=true to use AnimateDiff",
                 "animatediff": "Use /generate-animated-video or /add-motion-to-image endpoints"
             }
         }
@@ -942,14 +928,14 @@ async def full_pipeline_with_images(request: FullPipelineWithImagesRequest = Ful
         
         # Step 3: Generate images
         logger.info("Step 3: Generating images...")
-        logger.info(f"Using {'Stable Diffusion' if request.use_stable_diffusion else 'DALL-E'} for image generation")
+        logger.info(f"Using {'AnimateDiff' if request.use_animatediff else 'DALL-E'} for image generation")
         
         # Choose image generator based on switch
-        if request.use_stable_diffusion:
-            if stable_diffusion_generator is None:
-                raise HTTPException(status_code=503, detail="Stable Diffusion generator not available. Check model configuration.")
-            generator = stable_diffusion_generator
-            generator_name = "Stable Diffusion"
+        if request.use_animatediff:
+            if animatediff_generator is None:
+                raise HTTPException(status_code=503, detail="AnimateDiff generator not available. Check model configuration.")
+            generator = animatediff_generator
+            generator_name = "AnimateDiff"
         else:
             if image_generator is None:
                 raise HTTPException(status_code=503, detail="DALL-E image generator not available. Check OPENAI_API_KEY configuration.")
@@ -994,15 +980,15 @@ async def full_pipeline_with_images(request: FullPipelineWithImagesRequest = Ful
                 raise HTTPException(status_code=503, detail="FFmpegVideoCreator not available")
             
             # Choose between different video creation methods
-            if request.use_stable_diffusion and ffmpeg_video_creator.sd_generator:
-                logger.info(f"Using FFmpegVideoCreator with Stable Video Diffusion for motion videos")
+            if request.use_animatediff and ffmpeg_video_creator.animatediff_generator:
+                logger.info(f"Using FFmpegVideoCreator with AnimateDiff for motion videos")
                 result_video_path = ffmpeg_video_creator.create_video_with_motion_images(
                     audio_path=audio_path,
                     narration_lines=ffmpeg_narration_lines,
                     image_paths=successful_image_paths,
                     output_path=video_path,
                     motion_strength=1.0,  # Enhanced motion strength for more visible effects
-                    num_frames_per_segment=12,  # Reduced for faster generation
+                    num_frames_per_segment=20,  # Use 20 frames (within 16-24 range)
                     video_fps=8,
                     fast_mode=True,  # Enable fast mode
                     timeout_seconds=60,  # 60 second timeout per segment
@@ -1076,12 +1062,12 @@ import signal
 def cleanup_resources():
     """Clean up resources on application shutdown"""
     logger.info("Cleaning up resources...")
-    if stable_diffusion_generator is not None:
+    if animatediff_generator is not None:
         try:
-            stable_diffusion_generator.cleanup()
-            logger.info("StableDiffusionGenerator cleaned up successfully")
+            animatediff_generator.cleanup()
+            logger.info("AnimateDiffGenerator cleaned up successfully")
         except Exception as e:
-            logger.error(f"Error cleaning up StableDiffusionGenerator: {e}")
+            logger.error(f"Error cleaning up AnimateDiffGenerator: {e}")
 
 # Register cleanup function
 atexit.register(cleanup_resources)
