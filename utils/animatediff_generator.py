@@ -43,7 +43,7 @@ logger = logging.getLogger(__name__)
 class AnimateDiffGenerator:
     def __init__(self, 
                  sd_model_id: str = "SG161222/Realistic_Vision_V5.1_noVAE",
-                 motion_adapter_id: str = "guoyww/animatediff-v1-5-2",
+                 motion_adapter_id: str = "guoyww/animatediff-v1-5-2",  # Using available model
                  device: str = "auto",
                  memory_optimization: bool = True,
                  cache_dir: str = "models_cache"):
@@ -151,12 +151,12 @@ class AnimateDiffGenerator:
             if ANIMATEDIFF_AVAILABLE:
                 logger.info(f"Loading AnimateDiff pipeline with MotionAdapter: {self.motion_adapter_id}")
                 
-                # Official MotionAdapter checkpoints from guoyww namespace
+                # Official MotionAdapter checkpoints - using available models
                 motion_adapters = [
-                    "guoyww/animatediff-v1-5-3",  # Latest enhanced version
-                    "guoyww/animatediff-v1-5-2",  # Enhanced version
-                    "guoyww/animatediff-v1-5",    # Stable version
-                    "guoyww/animatediff-v1-4",    # Alternative
+                    "guoyww/animatediff-v1-5-2",  # Enhanced version (available)
+                    "guoyww/animatediff-v1-5",    # Stable version (available)
+                    "guoyww/animatediff-v1-4",    # Alternative (available)
+                    "guoyww/animatediff-v1-3",    # Fallback option
                 ]
                 
                 for adapter_id in motion_adapters:
