@@ -60,6 +60,8 @@ def generate_animatediff_with_shared_pipeline(prompt: str, num_frames: int, seed
             logger.error("Shared pipeline not initialized")
             return []
         
+        import torch
+        
         # Generate video frames using the shared pipeline
         result = _shared_pipeline.animatediff_pipeline(
             prompt=prompt,
@@ -69,7 +71,7 @@ def generate_animatediff_with_shared_pipeline(prompt: str, num_frames: int, seed
             num_frames=num_frames,
             num_inference_steps=20,
             guidance_scale=7.5,
-            generator=_shared_pipeline.torch.Generator(device=_shared_pipeline.device).manual_seed(seed)
+            generator=torch.Generator(device=_shared_pipeline.device).manual_seed(seed)
         )
         
         # Return the frames
