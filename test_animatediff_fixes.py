@@ -31,7 +31,7 @@ def test_motion_adapter_loading():
                 return True  # This is acceptable, we have a fallback
         
         # Test loading MotionAdapter
-        motion_adapter = MotionAdapter.from_pretrained("guoyww/animatediff-v1-5-2")
+        motion_adapter = MotionAdapter.from_pretrained("guoyww/animatediff-motion-adapter-v1-5")
         logger.info("✅ MotionAdapter loaded successfully with from_pretrained")
         
         # Check if it has the expected attributes
@@ -64,7 +64,7 @@ def test_animatediff_pipeline_initialization():
         
         if MotionAdapter is not None:
             # Load MotionAdapter first
-            motion_adapter = MotionAdapter.from_pretrained("guoyww/animatediff-v1-5-2")
+            motion_adapter = MotionAdapter.from_pretrained("guoyww/animatediff-motion-adapter-v1-5")
             logger.info("✅ MotionAdapter loaded")
             
             # Initialize AnimateDiffPipeline with motion_adapter argument
@@ -86,7 +86,7 @@ def test_animatediff_pipeline_initialization():
             logger.info("Using motion_adapter_path approach")
             pipeline = AnimateDiffPipeline.from_pretrained(
                 "SG161222/Realistic_Vision_V5.1_noVAE",
-                motion_adapter_path="guoyww/animatediff-v1-5-2",
+                motion_adapter_path="guoyww/animatediff-motion-adapter-v1-5",
                 torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32
             )
             logger.info("✅ AnimateDiffPipeline initialized successfully with motion_adapter_path")
@@ -102,16 +102,22 @@ def test_scheduler_configuration():
     logger.info("Testing scheduler configuration...")
     
     try:
-        from diffusers import DDIMScheduler, DPMSolverMultistepScheduler
+        from diffusers import DDIMScheduler, DPMSolverMultistepScheduler, DEISMultistepScheduler
         
-        # Test DDIMScheduler with final_sigmas_type
+        # Test DDIMScheduler without final_sigmas_type (DDIMScheduler doesn't support it)
         ddim_scheduler = DDIMScheduler(
             beta_start=0.00085,
             beta_end=0.012,
-            beta_schedule="scaled_linear",
+            beta_schedule="scaled_linear"
+            # final_sigmas_type is not supported by DDIMScheduler
+        )
+        logger.info("✅ DDIMScheduler configured without final_sigmas_type")
+        
+        # Test DEISMultistepScheduler with final_sigmas_type
+        deis_scheduler = DEISMultistepScheduler(
             final_sigmas_type="sigma_min"
         )
-        logger.info("✅ DDIMScheduler configured with final_sigmas_type='sigma_min'")
+        logger.info("✅ DEISMultistepScheduler configured with final_sigmas_type='sigma_min'")
         
         # Test DPMSolverMultistepScheduler with final_sigmas_type
         dpmsolver_scheduler = DPMSolverMultistepScheduler(
@@ -137,7 +143,7 @@ def test_full_pipeline():
         # Initialize generator with minimal settings
         generator = AnimateDiffGenerator(
             sd_model_id="SG161222/Realistic_Vision_V5.1_noVAE",
-            motion_adapter_id="guoyww/animatediff-v1-5-2",
+            motion_adapter_id="guoyww/animatediff-motion-adapter-v1-5",
             memory_optimization=True
         )
         

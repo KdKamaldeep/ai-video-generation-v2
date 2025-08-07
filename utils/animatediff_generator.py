@@ -28,7 +28,7 @@ import traceback
 
 # AnimateDiff imports
 try:
-    from diffusers import AnimateDiffPipeline, DDIMScheduler
+    from diffusers import AnimateDiffPipeline, DDIMScheduler, DEISMultistepScheduler
     # Try different import paths for MotionAdapter
     try:
         from diffusers import MotionAdapter
@@ -52,7 +52,7 @@ logger = logging.getLogger(__name__)
 class AnimateDiffGenerator:
     def __init__(self, 
                  sd_model_id: str = "SG161222/Realistic_Vision_V5.1_noVAE",
-                 motion_adapter_id: str = "guoyww/animatediff-v1-5-2",  # Using available model
+                 motion_adapter_id: str = "guoyww/animatediff-motion-adapter-v1-5",  # Using public motion adapter
                  device: str = "auto",
                  memory_optimization: bool = True,
                  cache_dir: str = "models_cache"):
@@ -175,12 +175,12 @@ class AnimateDiffGenerator:
             if ANIMATEDIFF_AVAILABLE:
                 logger.info(f"Loading AnimateDiff pipeline with MotionAdapter: {self.motion_adapter_id}")
                 
-                # Official MotionAdapter checkpoints - using available models
+                # Official MotionAdapter checkpoints - using public motion adapter
                 motion_adapters = [
-                    "guoyww/animatediff-v1-5-2",  # Enhanced version (available)
-                    "guoyww/animatediff-v1-5",    # Stable version (available)
-                    "guoyww/animatediff-v1-4",    # Alternative (available)
-                    "guoyww/animatediff-v1-3",    # Fallback option
+                    "guoyww/animatediff-motion-adapter-v1-5",  # Public motion adapter
+                    "guoyww/animatediff-v1-5-2",  # Enhanced version (fallback)
+                    "guoyww/animatediff-v1-5",    # Stable version (fallback)
+                    "guoyww/animatediff-v1-4",    # Alternative (fallback)
                 ]
                 
                 for adapter_id in motion_adapters:
@@ -215,29 +215,30 @@ class AnimateDiffGenerator:
                                 # Remove variant parameter as these models don't have fp16 variants
                             )
                         
-                        # Configure DDIM scheduler for AnimateDiff (official recommendation)
+                        # Configure scheduler for AnimateDiff
                         try:
                             # Try to load scheduler from the motion adapter
-                            scheduler = DDIMScheduler.from_pretrained(
+                            # Use DEISMultistepScheduler for final_sigmas_type support
+                            scheduler = DEISMultistepScheduler.from_pretrained(
                                 adapter_id,
                                 subfolder="scheduler",
                                 cache_dir=self.cache_dir,  # Cache the scheduler
-                                beta_start=0.00085,  # Standard DDIM parameters
-                                beta_end=0.012,
-                                beta_schedule="scaled_linear",
                                 final_sigmas_type="sigma_min"
                             )
                             self.animatediff_pipeline.scheduler = scheduler
-                            logger.info("DDIMScheduler configured for AnimateDiff")
+                            logger.info("DEISMultistepScheduler configured for AnimateDiff")
                         except Exception as e:
                             logger.warning(f"Could not configure AnimateDiff scheduler from adapter: {e}")
-                            # Try with default settings if custom configuration fails
+                            # Try with DDIMScheduler without final_sigmas_type if DEISMultistepScheduler fails
                             try:
                                 scheduler = DDIMScheduler.from_pretrained(
                                     adapter_id,
                                     subfolder="scheduler",
                                     cache_dir=self.cache_dir,
-                                    final_sigmas_type="sigma_min"
+                                    beta_start=0.00085,  # Standard DDIM parameters
+                                    beta_end=0.012,
+                                    beta_schedule="scaled_linear"
+                                    # Removed final_sigmas_type as DDIMScheduler doesn't support it
                                 )
                                 self.animatediff_pipeline.scheduler = scheduler
                                 logger.info("DDIMScheduler configured with default settings")
@@ -615,7 +616,7 @@ def test_animatediff():
         # Initialize generator
         generator = AnimateDiffGenerator(
             sd_model_id="SG161222/Realistic_Vision_V5.1_noVAE",
-            motion_adapter_id="guoyww/animatediff-v1-5-2",
+            motion_adapter_id="guoyww/animatediff-motion-adapter-v1-5",
             memory_optimization=True,
             cache_dir="models_cache"  # Cache models locally
         )
