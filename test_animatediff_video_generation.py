@@ -98,7 +98,7 @@ def generate_long_video_with_chunks(generator, text: str, style: str, target_dur
                 'ffmpeg', '-f', 'concat', '-safe', '0',
                 '-i', file_list_path,
                 '-c:v', 'libx264', '-preset', 'medium', '-crf', '23',
-                '-r', '8', '-pix_fmt', 'yuv420p',
+                '-framerate', '8', '-pix_fmt', 'yuv420p',
                 '-vsync', 'cfr',
                 '-avoid_negative_ts', 'make_zero',
                 '-y', final_video_path
@@ -172,7 +172,7 @@ def generate_long_video_with_chunk_variations(generator, base_prompt: str, chunk
                 full_prompt = f"{base_prompt}, {variation}, final scene"
             else:
                 # Middle chunks: continue the story progression
-                full_prompt = f"{variation}, story continues"
+                full_prompt = f"{base_prompt}, {variation}, story continues"
             
             logger.info(f"Story Chunk {chunk_idx + 1}/{num_chunks}: {full_prompt}")
             
@@ -226,8 +226,7 @@ def generate_long_video_with_chunk_variations(generator, base_prompt: str, chunk
                 'ffmpeg', '-f', 'concat', '-safe', '0',
                 '-i', file_list_path,
                 '-c:v', 'libx264', '-preset', 'medium', '-crf', '23',
-                '-r', '8', '-pix_fmt', 'yuv420p',
-                '-framerate', '8',
+                '-framerate', '8', '-pix_fmt', 'yuv420p',
                 '-vsync', 'cfr',
                 '-avoid_negative_ts', 'make_zero',
                 '-y', final_video_path
