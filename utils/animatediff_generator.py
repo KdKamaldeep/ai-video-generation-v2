@@ -29,7 +29,15 @@ import traceback
 # AnimateDiff imports
 try:
     from diffusers import AnimateDiffPipeline, DDIMScheduler
-    from diffusers.models.motion_adapter import MotionAdapter
+    # Try different import paths for MotionAdapter
+    try:
+        from diffusers import MotionAdapter
+    except ImportError:
+        try:
+            from diffusers.models.motion_adapter import MotionAdapter
+        except ImportError:
+            # If MotionAdapter is not available, we'll use the motion_adapter_path approach
+            MotionAdapter = None
     from diffusers.utils import export_to_video
     ANIMATEDIFF_AVAILABLE = True
     print("✅ AnimateDiffPipeline import succeeded.")
@@ -179,22 +187,33 @@ class AnimateDiffGenerator:
                     try:
                         logger.info(f"Trying MotionAdapter: {adapter_id}")
                         
-                        # Load MotionAdapter first
-                        try:
-                            motion_adapter = MotionAdapter.from_pretrained(adapter_id, cache_dir=self.cache_dir)
-                            logger.info(f"Motion adapter loaded: {adapter_id}")
-                        except Exception as e:
-                            logger.warning(f"Could not load motion adapter {adapter_id}: {e}")
-                            continue
-                        
-                        # Load AnimateDiff with MotionAdapter using the motion_adapter argument
-                        self.animatediff_pipeline = AnimateDiffPipeline.from_pretrained(
-                            self.sd_model_id,
-                            motion_adapter=motion_adapter,
-                            torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
-                            cache_dir=self.cache_dir,  # Cache the model
-                            # Remove variant parameter as these models don't have fp16 variants
-                        )
+                        # Load MotionAdapter or use motion_adapter_path
+                        if MotionAdapter is not None:
+                            try:
+                                motion_adapter = MotionAdapter.from_pretrained(adapter_id, cache_dir=self.cache_dir)
+                                logger.info(f"Motion adapter loaded: {adapter_id}")
+                                
+                                # Load AnimateDiff with MotionAdapter using the motion_adapter argument
+                                self.animatediff_pipeline = AnimateDiffPipeline.from_pretrained(
+                                    self.sd_model_id,
+                                    motion_adapter=motion_adapter,
+                                    torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
+                                    cache_dir=self.cache_dir,  # Cache the model
+                                    # Remove variant parameter as these models don't have fp16 variants
+                                )
+                            except Exception as e:
+                                logger.warning(f"Could not load motion adapter {adapter_id}: {e}")
+                                continue
+                        else:
+                            # Fallback to using motion_adapter_path
+                            logger.info(f"Using motion_adapter_path approach for: {adapter_id}")
+                            self.animatediff_pipeline = AnimateDiffPipeline.from_pretrained(
+                                self.sd_model_id,
+                                motion_adapter_path=adapter_id,
+                                torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
+                                cache_dir=self.cache_dir,  # Cache the model
+                                # Remove variant parameter as these models don't have fp16 variants
+                            )
                         
                         # Configure DDIM scheduler for AnimateDiff (official recommendation)
                         try:
