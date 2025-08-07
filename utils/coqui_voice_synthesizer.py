@@ -54,24 +54,22 @@ class CoquiVoiceSynthesizer:
         """Load the Coqui TTS model"""
         try:
             from TTS.api import TTS
-            
+
             logger.info("Loading Coqui TTS Bark model...")
-            
-            # Load the model to GPU (recommended for Bark)
-            self.tts = TTS(
-                self.config.model_name,
-                gpu=self.config.gpu,
-                 kwargs={"weights_only": False}
-            )
-            
+
+            device = "cuda" if self.config.gpu and torch.cuda.is_available() else "cpu"
+
+            self.tts = TTS(self.config.model_name).to(device)
+
             logger.info("✅ Coqui TTS Bark model loaded successfully")
-            
+
         except ImportError:
             logger.error("❌ Coqui TTS not installed. Install with: pip install TTS")
             raise ImportError("Coqui TTS not available. Install with: pip install TTS")
         except Exception as e:
             logger.error(f"❌ Failed to load Coqui TTS model: {e}")
             raise
+
     
     def synthesize_voice(self, 
                         narration_lines: List[str], 
