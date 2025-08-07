@@ -34,7 +34,7 @@ def direct_text_to_video_example():
         # Initialize the generator
         generator = AnimateDiffGenerator(
             sd_model_id="SG161222/Realistic_Vision_V5.1_noVAE",
-            motion_adapter_id="guoyww/animatediff-v1-5-2",
+            motion_adapter_id="guoyww/animatediff-motion-adapter-v1-5",
             memory_optimization=True
         )
         
@@ -60,8 +60,7 @@ def direct_text_to_video_example():
                 fps=8,
                 num_inference_steps=20,
                 guidance_scale=7.5,
-                seed=42 + i,
-                decode_chunk_size=8  # Memory optimization
+                seed=42 + i
             )
             
             if video_path:
@@ -93,7 +92,7 @@ def compare_approaches():
         
         generator = AnimateDiffGenerator(
             sd_model_id="SG161222/Realistic_Vision_V5.1_noVAE",
-            motion_adapter_id="guoyww/animatediff-v1-5-2",
+            motion_adapter_id="guoyww/animatediff-motion-adapter-v1-5",
             memory_optimization=True
         )
         
@@ -121,8 +120,7 @@ def compare_approaches():
             style="realistic",
             num_frames=24,
             fps=8,
-            seed=42,
-            decode_chunk_size=8
+            seed=42
         )
         
         if video_path:

@@ -60,7 +60,7 @@ def test_step_2_generate_videos_directly(prompts, generate_images=False):
         # Initialize enhanced generator
         generator = AnimateDiffGenerator(
             sd_model_id="SG161222/Realistic_Vision_V5.1_noVAE",
-            motion_adapter_id="guoyww/animatediff-v1-5-2",
+            motion_adapter_id="guoyww/animatediff-motion-adapter-v1-5",
             memory_optimization=True
         )
         video_paths = []
@@ -96,8 +96,7 @@ def test_step_2_generate_videos_directly(prompts, generate_images=False):
                 fps=8,
                 num_inference_steps=20,
                 guidance_scale=7.5,
-                seed=42 + i,
-                decode_chunk_size=8  # Official memory optimization
+                seed=42 + i
             )
             
             if video_path:
