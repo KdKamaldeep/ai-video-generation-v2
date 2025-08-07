@@ -44,7 +44,7 @@ def test_animatediff_generator():
                 "name": "Basic Realistic Video",
                 "text": "A beautiful sunset over the ocean with gentle waves",
                 "style": "realistic",
-                "num_frames": 16,
+                "num_frames": 80,  # 10 seconds at 8 FPS
                 "fps": 8,
                 "width": 512,
                 "height": 768,
@@ -54,7 +54,7 @@ def test_animatediff_generator():
                 "name": "Cartoon Style Video",
                 "text": "A cute cartoon cat playing with a ball of yarn",
                 "style": "cartoon",
-                "num_frames": 20,
+                "num_frames": 120,  # 10 seconds at 12 FPS
                 "fps": 12,
                 "width": 512,
                 "height": 768,
@@ -64,8 +64,7 @@ def test_animatediff_generator():
                 "name": "Minimalist Style Video",
                 "text": "Simple geometric shapes moving in a minimalist design",
                 "style": "minimalist",
-                "num_frames": 24,
-                "fps": 8,
+                "num_frames": 80,  # 10 seconds at 8 FPS
                 "width": 512,
                 "height": 768,
                 "seed": 456
@@ -74,7 +73,7 @@ def test_animatediff_generator():
                 "name": "Dramatic Style Video",
                 "text": "A dramatic storm with lightning and dark clouds",
                 "style": "dramatic",
-                "num_frames": 18,
+                "num_frames": 100,  # 10 seconds at 10 FPS
                 "fps": 10,
                 "width": 512,
                 "height": 768,
@@ -84,7 +83,7 @@ def test_animatediff_generator():
                 "name": "Funny Style Video",
                 "text": "A silly penguin slipping on ice and falling",
                 "style": "funny",
-                "num_frames": 16,
+                "num_frames": 80,  # 10 seconds at 8 FPS
                 "fps": 8,
                 "width": 512,
                 "height": 768,
@@ -269,7 +268,7 @@ def test_single_video_with_upload():
             "style": "realistic",
             "width": 512,
             "height": 768,
-            "num_frames": 20,
+            "num_frames": 80,  # 10 seconds at 8 FPS
             "fps": 8,
             "motion_strength": 0.8,
             "num_inference_steps": 20,
