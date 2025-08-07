@@ -1,3 +1,6 @@
+# Apply PyTorch 2.6 compatibility patches first
+import utils.pytorch_patch
+
 import os
 import tempfile
 import logging

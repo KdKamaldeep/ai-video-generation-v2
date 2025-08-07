@@ -19,6 +19,23 @@ from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
+# Patch for PyTorch 2.6 weights_only issue
+def _patch_torch_load():
+    """Patch torch.load to handle PyTorch 2.6 weights_only compatibility issue"""
+    original_torch_load = torch.load
+    
+    def patched_torch_load(f, *args, **kwargs):
+        # Force weights_only=False for TTS model loading
+        if 'weights_only' not in kwargs:
+            kwargs['weights_only'] = False
+        return original_torch_load(f, *args, **kwargs)
+    
+    torch.load = patched_torch_load
+    logger.info("Applied PyTorch 2.6 weights_only compatibility patch")
+
+# Apply the patch when module is imported
+_patch_torch_load()
+
 class CoquiVoiceConfig(BaseModel):
     """Configuration for Coqui TTS voice synthesis"""
     model_name: str = "tts_models/multilingual/multi-dataset/bark"
