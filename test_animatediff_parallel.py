@@ -18,32 +18,10 @@ import shutil
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Global variable to store the shared pipeline
-_shared_pipeline = None
-
-def initialize_shared_pipeline():
-    """Initialize the AnimateDiff pipeline once for sharing across processes"""
-    global _shared_pipeline
-    
-    try:
-        from utils.animatediff_generator import AnimateDiffGenerator
-        
-        logger.info("Initializing shared AnimateDiff pipeline...")
-        _shared_pipeline = AnimateDiffGenerator(
-            sd_model_id="SG161222/Realistic_Vision_V5.1_noVAE",
-            motion_adapter_id="guoyww/animatediff-motion-adapter-v1-5",
-            memory_optimization=True
-        )
-        logger.info("✅ Shared pipeline initialized successfully")
-        return _shared_pipeline
-        
-    except Exception as e:
-        logger.error(f"❌ Failed to initialize shared pipeline: {e}")
-        return None
-
-def generate_animatediff_with_shared_pipeline(prompt: str, num_frames: int, seed: int) -> List[Image.Image]:
+def generate_animatediff_in_process(prompt: str, num_frames: int, seed: int) -> List[Image.Image]:
     """
-    Generate AnimateDiff frames using the shared pipeline.
+    Generate AnimateDiff frames in a separate process.
+    Each process creates its own pipeline to avoid CUDA sharing issues.
     
     Args:
         prompt: Text prompt for video generation
@@ -53,17 +31,20 @@ def generate_animatediff_with_shared_pipeline(prompt: str, num_frames: int, seed
     Returns:
         List of PIL Image objects representing the video frames
     """
-    global _shared_pipeline
-    
     try:
-        if _shared_pipeline is None:
-            logger.error("Shared pipeline not initialized")
-            return []
-        
+        from utils.animatediff_generator import AnimateDiffGenerator
         import torch
         
-        # Generate video frames using the shared pipeline
-        result = _shared_pipeline.animatediff_pipeline(
+        # Create a new pipeline instance for this process
+        logger.info(f"Creating pipeline for seed {seed}")
+        generator = AnimateDiffGenerator(
+            sd_model_id="SG161222/Realistic_Vision_V5.1_noVAE",
+            motion_adapter_id="guoyww/animatediff-motion-adapter-v1-5",
+            memory_optimization=True
+        )
+        
+        # Generate video frames
+        result = generator.animatediff_pipeline(
             prompt=prompt,
             negative_prompt="bad quality, worse quality, low quality",
             width=512,
@@ -71,17 +52,20 @@ def generate_animatediff_with_shared_pipeline(prompt: str, num_frames: int, seed
             num_frames=num_frames,
             num_inference_steps=20,
             guidance_scale=7.5,
-            generator=torch.Generator(device=_shared_pipeline.device).manual_seed(seed)
+            generator=torch.Generator(device=generator.device).manual_seed(seed)
         )
         
         # Return the frames
         frames = result.frames[0]
         logger.info(f"Generated {len(frames)} frames for seed {seed}")
         
+        # Cleanup this process's pipeline
+        generator.cleanup()
+        
         return frames
         
     except Exception as e:
-        logger.error(f"Error generating AnimateDiff frames: {e}")
+        logger.error(f"Error generating AnimateDiff frames for seed {seed}: {e}")
         return []
 
 def generate_chunk_worker(args: Tuple[str, int, int, str]) -> Tuple[int, bool, str]:
@@ -103,8 +87,8 @@ def generate_chunk_worker(args: Tuple[str, int, int, str]) -> Tuple[int, bool, s
         chunk_dir = os.path.join(output_dir, f"chunk_{chunk_index:02d}")
         os.makedirs(chunk_dir, exist_ok=True)
         
-        # Generate frames using shared pipeline
-        frames = generate_animatediff_with_shared_pipeline(prompt, num_frames=24, seed=seed)
+        # Generate frames using process-specific pipeline
+        frames = generate_animatediff_in_process(prompt, num_frames=24, seed=seed)
         
         if not frames:
             logger.error(f"Worker {chunk_index}: Failed to generate frames")
@@ -219,12 +203,7 @@ def generate_parallel_video(base_prompt: str = "A panda dancing in a bamboo fore
         logger.info(f"Base seed: {base_seed}")
         logger.info(f"Target FPS: {fps}")
         logger.info(f"Output directory: {output_dir}")
-        
-        # Initialize shared pipeline once
-        shared_pipeline = initialize_shared_pipeline()
-        if shared_pipeline is None:
-            logger.error("❌ Failed to initialize shared pipeline")
-            return None
+        logger.info("Note: Each process creates its own pipeline to avoid CUDA sharing issues")
         
         # Prepare arguments for parallel processing
         worker_args = []
@@ -237,6 +216,7 @@ def generate_parallel_video(base_prompt: str = "A panda dancing in a bamboo fore
         start_time = time.time()
         
         # Use multiprocessing to generate chunks in parallel
+        # Each process will create its own pipeline instance
         with mp.Pool(processes=min(num_chunks, mp.cpu_count())) as pool:
             results = pool.map(generate_chunk_worker, worker_args)
         
@@ -277,11 +257,6 @@ def generate_parallel_video(base_prompt: str = "A panda dancing in a bamboo fore
             for chunk_dir in successful_chunks:
                 shutil.rmtree(chunk_dir)
                 logger.info(f"Cleaned up: {chunk_dir}")
-            
-            # Clean up shared pipeline
-            if shared_pipeline:
-                shared_pipeline.cleanup()
-                logger.info("Cleaned up shared pipeline")
             
             return final_video_path
         else:
