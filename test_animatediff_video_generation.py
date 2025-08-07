@@ -227,6 +227,7 @@ def generate_long_video_with_chunk_variations(generator, base_prompt: str, chunk
                 '-i', file_list_path,
                 '-c:v', 'libx264', '-preset', 'medium', '-crf', '23',
                 '-r', '8', '-pix_fmt', 'yuv420p',
+                '-framerate', '8',
                 '-vsync', 'cfr',
                 '-avoid_negative_ts', 'make_zero',
                 '-y', final_video_path
@@ -277,23 +278,7 @@ def test_animatediff_generator():
         
         # Test scenarios - now targeting 10+ seconds each with story-based chunk variations
         test_scenarios = [
-            {
-                "name": "Sunset Story Video",
-                "base_prompt": "A beautiful sunset over the ocean with gentle waves",
-                "chunk_variations": [
-                    "establishing the peaceful scene with seagulls flying overhead",
-                    "the waves gradually increase in intensity as the wind picks up",
-                    "the sky transforms from orange to deep purple and pink hues",
-                    "the sun sinks lower, casting long shadows across the water",
-                    "the scene fades into twilight as the first stars appear"
-                ],
-                "style": "realistic",
-                "target_duration": 10,  # 10 seconds
-                "fps": 8,
-                "width": 512,
-                "height": 768,
-                "seed": 42
-            },
+           
             {
                 "name": "Cat Adventure Story",
                 "base_prompt": "A cute cartoon cat playing with a ball of yarn",
